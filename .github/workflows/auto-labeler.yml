@@ -1,21 +1,36 @@
-name: Auto Labeler
+name: "Auto Assign & Label"
 on:
   issues:
     types: [opened]
+  pull_request:
+    types: [opened]
 
 jobs:
-  label_issue:
+  setup_item:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      pull-requests: write
     steps:
-      - name: Aggiungi Label "TO DO"
-        uses: actions/github-script@v6
+      - name: "Assign creator & Label Issues"
+        uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.addLabels({
-              issue_number: context.issue.number,
+            const creator = context.payload.sender.login;
+            const issueNumber = context.payload.issue ? context.payload.issue.number : context.payload.pull_request.number;
+
+            await github.rest.issues.addAssignees({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: ['TO DO']
-            })
+              issue_number: issueNumber,
+              assignees: [creator]
+            });
+
+            if (context.payload.issue) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['TO DO']
+              });
+            }

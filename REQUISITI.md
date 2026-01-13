@@ -1,3 +1,4 @@
+
 # 🧭 Guida rapida: come si scrivono i requisiti (progetto “Apicoltura Digitale”)
 
 > **Obiettivo:** trasformare idee, appunti e desideri del cliente in frasi **chiare, verificabili e tracciabili** (cioè: controllabili con un test e collegabili alla loro “fonte”).  
@@ -135,11 +136,67 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 > Obiettivo: definire quali sensori servono, dove metterli, e quali vincoli fisici ci sono (meteo, temperatura, acqua, urti…).
 
 ### Requisiti funzionali (esempi)
-- **RF-HW-01 — Peso**: Il device deve misurare il peso dell’arnia per stimare andamento nettare/colonia.  
-  - Nota dominio: il peso cresce con nettare e colonia, e diminuisce quando la colonia consuma miele o muore.  
+**RF-HW-01 — Peso**: Il device deve misurare il peso dell’arnia per stimare andamento nettare/colonia.  
+ - Nota dominio: il peso cresce con nettare e colonia, e diminuisce quando la colonia consuma miele o muore. 
+ 
+**RF-HW-01 — Monitoraggio Peso e Mielometro** Il device deve misurare il peso totale dell'arnia con una risoluzione minima di 100g e calcolare il guadagno netto giornaliero (funzione mielometro).
 
-### Requisiti non funzionali (esempi)
-- **RNF-HW-01 — Resistenza meteo**: Il device deve resistere a pioggia, umidità e sbalzi termici.  
+ - Nota dominio: Il peso fluttua durante il giorno (le api escono a bottinare); la misura valida per il mielometro è la differenza di peso tra due notti consecutive (a bottinatrici rientrate e miele parzialmente deumidificato).
+    
+
+**RF-HW-02 — Clima Interno (SHT21/BME280)** Il device deve misurare Temperatura e Umidità Relativa (RH) posizionato nella zona superiore (melario/coprifavo) e/o centrale (nido).
+
+ - Nota dominio:_ L'umidità dell'aria interna è inversamente proporzionale alla maturazione del miele. Una RH interna > 65% costante indica rischio fermentazione o blocco dell'evaporazione. La temperatura del nido deve rimanere stabile a ~35°C per la covata.
+    
+
+**RF-HW-03 — Analisi Acustica (Spettro)** Il device deve campionare il rumore interno ed effettuare un'analisi in frequenza (FFT) per identificare picchi specifici tra 200Hz e 600Hz.
+
+-   _Nota dominio:_ Le api emettono frequenze specifiche per stati diversi: "Piping" (regine vergini pre-sciamatura, 400-500Hz), orfanità (bassa frequenza, "lamento"), e ventilazione notturna (asciugatura miele).
+    
+
+**RF-HW-04 — Conteggio Flussi (Ingresso/Uscita)** Il device deve contare distintamente il numero di api in uscita e il numero di api in entrata dal predellino di volo.
+
+-   _Nota dominio:_ Un saldo negativo (Uscite > Entrate) prolungato indica moria nei campi (pesticidi) o predatori. Un traffico intenso in entrata indica forte importazione di nettare.
+    
+
+**RF-HW-05 — Livello Risorse Idriche** Il device deve misurare la distanza del pelo libero dell'acqua in un serbatoio esterno (secchio) e convertire il dato in percentuale residua.
+
+-   _Nota dominio:_ Le api necessitano di molta acqua per termoregolare l'arnia d'estate. Se l'acqua finisce, la colonia rischia il collasso termico.
+    
+
+----------
+
+### Requisiti Non Funzionali (Vincoli e Qualità)
+
+**RNF-HW-01 — Resistenza Ambientale Esterna (IP Rating)** I sensori esterni (Livello Acqua, Bilancia, Elettronica centrale) devono avere un grado di protezione minimo IP65 o IP67.
+
+-   _Nota dominio:_ L'attrezzatura è esposta a pioggia battente, raggi UV diretti, gelo invernale e fango.
+    
+
+**RNF-HW-02 — Resistenza Ambientale Interna (Anti-Propoli)** I sensori interni (SHT21, Microfono) devono essere dotati di protezioni fisiche (reti a maglia fine < 2mm) o filtri in PTFE.
+
+-   _Nota dominio:_ Le api "propolizzano" (coprono di resina) qualsiasi corpo estraneo per sterilizzarlo. Un sensore non protetto viene murato e reso inutilizzabile in < 48 ore.
+    
+
+**RNF-HW-03 — Resistenza Chimica (Acidi)** I materiali e i contatti esposti all'interno dell'arnia devono resistere alla corrosione da vapori acidi.
+
+-   _Nota dominio:_ Gli apicoltori usano regolarmente Acido Ossalico (sublimato o gocciolato) e Acido Formico per combattere la Varroa. Questi acidi ossidano rapidamente i contatti elettronici standard.
+    
+
+**RNF-HW-04 — Basso Consumo (Low Power)** Il sistema deve garantire un'autonomia operativa di almeno 6 mesi senza ricarica o manutenzione (o supportare ricarica solare).
+
+-   _Nota dominio:_ Gli apiari sono spesso situati in zone remote ("nomadismo") prive di rete elettrica.
+    
+
+**RNF-HW-05 — Non Intrusività** L'installazione dei sensori non deve alterare i passaggi vitali (spazio d'ape ~8-9mm) né emettere vibrazioni o ultrasuoni nel range udibile dalle api.
+
+-   _Nota dominio:_ Le api comunicano tramite vibrazioni. Interferenze meccaniche o restringimenti dell'ingresso possono causare stress, aggressività o abbandono dell'arnia.
+    
+
+**RNF-HW-06 — Stabilità Termica (Celle di Carico)** Il sistema di pesatura deve includere un algoritmo di compensazione termica o hardware specifico a basso drift.
+
+-   _Nota dominio:_ Le bilance elettroniche soffrono molto la dilatazione termica. Una variazione di 10°C tra giorno e notte può falsare la lettura di centinaia di grammi se non compensata, rendendo inutile la stima del miele raccolto. 
+
 
 📎 Media consigliati:
 - Foto del modulo ESP32-CAM (per descrivere connettori e ingombri).

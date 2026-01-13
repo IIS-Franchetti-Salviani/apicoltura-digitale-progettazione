@@ -1,0 +1,38 @@
+erDiagram
+	direction TB
+	APIARIO {
+		int api_id PK ""  
+		string api_luogo  ""  
+		string api_nome  ""  
+	}
+
+	ARNIA {
+		int arn_id PK ""  
+		date arn_dataInst  ""  
+		boolean arn_piena  ""  
+		int api_id FK ""  
+	}
+
+	SENSORE {
+		int sen_id PK ""  
+		string sen_tipo  ""  
+		string sen_stato  ""  
+		int arn_id FK ""  
+	}
+
+	RILEVAZIONE {
+		int ril_id PK ""  
+		float ril_dato  ""  
+		date ril_data  ""  
+		time ril_ora  ""  
+		int sen_id FK ""  
+	}
+
+	NOTIFICA {
+		int not_id PK ""  
+		string not_titolo  ""  
+		date not_data  ""  
+		time not_ora  ""  
+		string not_desc  ""  
+		int ril_id FK ""  
+	}

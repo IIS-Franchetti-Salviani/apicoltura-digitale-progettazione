@@ -269,7 +269,15 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 
 > Obiettivo: definire quali sensori servono, dove metterli, e quali vincoli fisici ci sono (meteo, temperatura, acqua, urti…).
 
+<<<<<<< HEAD
   
+=======
+### Requisiti funzionali (esempi)
+**[RF-HW-01 — Peso](DOCUMENTAZIONE%20HARDWARE.md#hx711-rf-hw-01)**: Il device deve misurare il peso dell’arnia per stimare andamento nettare/colonia.  
+ - Nota dominio: il peso cresce con nettare e colonia, e diminuisce quando la colonia consuma miele o muore. 
+ 
+**RF-HW-01 — Monitoraggio Peso e Mielometro** Il device deve misurare il peso totale dell'arnia con una risoluzione minima di 100g e calcolare il guadagno netto giornaliero (funzione mielometro).
+>>>>>>> 0703a04f510a89868791ec7a7d60b4804014f5e8
 
 ### Requisiti funzionali (esempi)
 
@@ -277,13 +285,13 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 
 - Nota dominio: il peso cresce con nettare e colonia, e diminuisce quando la colonia consuma miele o muore.
 
-**RF-HW-02 — Clima Interno (SHT21/BME280)** Il device deve misurare Temperatura e Umidità Relativa (RH) posizionato nella zona superiore (melario/coprifavo) e/o centrale (nido).
+**[RF-HW-02 — Clima Interno (SHT21/BME280)](DOCUMENTAZIONE%20HARDWARE.md#sht21-rf-hw-02)** Il device deve misurare Temperatura e Umidità Relativa (RH) posizionato nella zona superiore (melario/coprifavo) e/o centrale (nido).
 
   
 
 - _Nota dominio:_ L'umidità dell'aria interna è inversamente proporzionale alla maturazione del miele. Una RH interna > 65% costante indica rischio fermentazione o blocco dell'evaporazione. La temperatura del nido deve rimanere stabile a ~35°C per la covata.
 
-**RF-HW-03 — Analisi Acustica (Spettro)** Il device deve campionare il rumore interno ed effettuare un'analisi in frequenza (FFT) per identificare picchi specifici tra 200Hz e 600Hz.
+**[RF-HW-03 — Analisi Acustica (Spettro)](DOCUMENTAZIONE%20HARDWARE.md#inmp441-rf-hw-03)** Il device deve campionare il rumore interno ed effettuare un'analisi in frequenza (FFT) per identificare picchi specifici tra 200Hz e 600Hz.
 
   
 
@@ -311,7 +319,11 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 3.  Predatori: Si possono notare calabroni o vespe che attaccano la colonia.
     
 
+<<<<<<< HEAD
   
+=======
+**[RF-HW-05 — Livello Risorse Idriche](DOCUMENTAZIONE%20HARDWARE.md#hw-038-rf-hw-05)** Il device deve misurare la distanza del pelo libero dell'acqua in un serbatoio esterno (secchio) e convertire il dato in percentuale residua.
+>>>>>>> 0703a04f510a89868791ec7a7d60b4804014f5e8
 
   
 

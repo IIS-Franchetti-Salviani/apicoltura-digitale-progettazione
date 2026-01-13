@@ -152,11 +152,19 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 ## Gruppo C — ESP32-CAM: logica software + comunicazione REST
 > Obiettivo: definire **come** il device gestisce dati, errori, rete instabile, buffering, formato messaggi.
 
-### Requisiti funzionali (esempi)
-- **RF-SW-01 — Ciclo acquisizione**: Il firmware deve acquisire le misure con una frequenza configurabile (es. temperatura ogni 60s; peso ogni 5 min; audio come “indicatori” aggregati).  
+### Requisiti funzionali
+- **RF-SW-01 — TM, Temperatura Interna**: Il sensore misura la temperatura interna dell'arnia.
+- **RF-SW-02 — TM, Unità di Misura**: Il sensore misura la temperatura in gradi Celsius (°C).
+- **RF-SW-03 — TM, Tipo di Dato**: Il valore del sensore è ospitato in una variabile di tipo float.
+- **RF-SW-04 — TM, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione (formato dd/MM/yyyy; hh:mm).
+- **RF-SW-05 — TM, Alert Soglia Massima**: Al superamento della temperatura di 37 °C, il sistema invia un alert.
+- **RF-SW-06 — TM, Alert Soglia Minima**: Al raggiungimento della temperatura di 30 °C, il sistema invia un alert.
+- **RF-SW-07 — TM, Frequenza di Aggiornamento**: Il sensore aggiorna la misurazione ogni 6 minuti.
 
-### Requisiti non funzionali (esempi)
-- **RNF-SW-01 — Robustezza**: In caso di crash, il device deve ripartire automaticamente e non perdere più delle ultime N misure in buffer.  
+### Requisiti non funzionali
+- **RNF-01 — TM, Persistenza Dati**: Il sensore salva i dati nella memoria locale dell'ESP32 in caso di assenza di connessione.
+- **RNF-02 — TM, Robustezza Ambientale**: Il sensore deve resistere a polvere, propoli e sporco.
+- **RNF-03 — TM, Facilità di Installazione**: Il sensore deve essere installato rapidamente senza disturbare le api.
 
 📎 Media consigliati:
 - Diagramma “REST API model” (per spiegare GET/POST e flusso dati).

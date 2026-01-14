@@ -173,9 +173,9 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 - **RF-SW-01 — TM, Temperatura Interna**: Il sensore misura la temperatura interna dell'arnia. 
 - **RF-SW-02 — TM, Unità di Misura**: Il sensore misura la temperatura in gradi Celsius (°C).
 - **RF-SW-03 — TM, Tipo di Dato**: Il valore del sensore è ospitato in una variabile di tipo float.
-- **RF-SW-04 — TM, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione (formato dd/MM/yyyy; hh:mm).
-- **RF-SW-05 — TM, Alert Soglia Massima**: Al superamento della temperatura di 37 °C, il sistema invia un alert. 
-- **RF-SW-06 — TM, Alert Soglia Minima**: Al raggiungimento della temperatura di 30 °C, il sistema invia un alert.
+- **RF-SW-04 — TM, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione letta dal DB.
+- **RF-SW-05 — TM, Alert Soglia Massima**: Al superamento della temperatura di soglia del DB, il sistema invia un alert. 
+- **RF-SW-06 — TM, Alert Soglia Minima**: Al raggiungimento della temperatura di soglia del DB, il sistema invia un alert.
 - **RF-SW-07 — TM, Frequenza di Aggiornamento**: Il sensore aggiorna la misurazione ogni 6 minuti.
 - **RF-SW-08 — PS, Misurazione**:  Il segnale analogico deve essere acquisito e convertito in valore digitale a 24 bit. 
 - **RF-SW-09 — PS, Taratura**:  La funzione di taratura deve esistere per fare la differenza dei pesi.
@@ -184,20 +184,20 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 - **RF-SW-12 — PS, Gestione Data**: Ad ogni misurazione deve essere associata una data.
 - **RF-SW-13 — PS, Gestione ora**: Ad ogni misurazione deve essere associata un orario. 
 - **RF-SW-14 — MIC, Acquisizione continua**: Il microfono deve acquisire il segnale a intervalli di 10 secondi.
-- **RF-SW-15 — MIC, Intensità suono**: Si calcola il volume medio in dB per capire l'agitazione dello sciame.
 - **RF-SW-16 — MIC, Frequenza suono**: Si calcola la frequenza per avere una misura più precisa dello stato dello sciame.
-- **RF-SW-17 — MIC, Verifica soglia**:  Il microfono confronta i valori rilevati con valori di allarme.
+- **RF-SW-17 — MIC, Verifica soglia**:  Il microfono confronta i valori rilevati con valori di allarme del DB.
 - **RF-SW-18 — MIC, Notifica alert**: Se si supera una certa soglia l'apicoltore riceve una notifica.
+- **RF-SW-18.5 -MIN, Time Stamp ogni minuto**, Si accumulano 6 misurazioni per poi inviarle insieme insieme al TimeStamp.
 - **RF-SW-19 — UM, Misurazione umidità come % nell'aria**: Il sensore misura la percentuale di umidità all'interno dell'arnia.
 - **RF-SW-20 — UM, Tipo di dato**: Il valore del sensore è ospitato in una variabile float. 
-- **RF-SW-21 — UM, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione (formato dd/MM/yyyy; hh:mm).
-- **RF-SW-22 — UM, Alert Soglia Massima**: Al superamento della soglia di umidità del 70% il sistema invia un alert. 
-- **RF-SW-23 — UM, Alert Soglia Minima**: Al raggiungimento della soglia di umidità inferiore del 40% il sistema invia un alert. 
+- **RF-SW-21 — UM, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione del DB.
+- **RF-SW-22 — UM, Alert Soglia Massima**: Al superamento della soglia del DB il sistema invia un alert. 
+- **RF-SW-23 — UM, Alert Soglia Minima**: Al raggiungimento della soglia del DB il sistema invia un alert. 
 - **RF-SW-24 — UM, Frequenza di Aggiornamento**: Il sensore aggiorna la misurazione ogni 6 minuti. 
 - **RF-SW-25 — SA, Misurazione Livello Acqua**: Il sensore misura il livello dell'acqua nel secchio in percentuale.
 - **RF-SW-26 — SA, Tipo di Dato**: Il valore del sensore è ospitato in una variabile di tipo float.
-- **RF-SW-27 — SA, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione (formato dd/MM/yyyy; hh:mm).
-- **RF-SW-28 — SA, Alert Soglia Massima**: Al superamento della soglia massima del secchio il sistema invia un alert. 
+- **RF-SW-27 — SA, Timestamp**: Ad ogni misurazione è associata la data e l'ora di esecuzione di soglia del DB.
+- **RF-SW-28 — SA, Alert Soglia Massima**: Al superamento della soglia del DB massima del secchio il sistema invia un alert. 
 - **RF-SW-29 — SA, Alert Soglia Minima**: Al raggiungimento del livello inferiore al 5% il sistema invia un alert. 
 - **RF-SW-30 — SA, Frequenza di Aggiornamento**: Il sensore aggiorna la misurazione ogni 40 minuti.
 - **RF-SW-31 — SA, Taratura**: Il sensore deve essere tarato salvando il livello più basso e più alto durante il riempimento. 

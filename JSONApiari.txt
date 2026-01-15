@@ -1,0 +1,8 @@
+ESEMPIO JSON TABELLA APIARI:
+
+{
+  "sen_luogo":"test",
+  "sen_lon":43.471016,
+  "sen_lat":12.229937,
+  "sen_luogo":"test castello"
+}

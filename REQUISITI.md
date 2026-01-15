@@ -324,6 +324,7 @@ Indica la quantità d’acqua presente nel serbatoio utilizzato per il raffredda
 ## Gruppo D — Architettura di rete e infrastruttura (server, sicurezza, connettività)
 > Obiettivo: definire come “parlano” tra loro device, server e interfaccia web (e con quali garanzie).
 
+
 ### Requisiti funzionali
 
 **RF-NET-01 — Router dedicato all’apiario:**  

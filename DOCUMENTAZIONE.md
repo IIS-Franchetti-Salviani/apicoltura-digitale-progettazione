@@ -123,9 +123,9 @@ Creazione Tabella dei Pin di ogni sensore nei confronti dell'ESP32, aggiornati i
 
 
 
-## 1.0 — Ciclo di misurazione e acquisizione (temperatura)
+#Lista Errori e alert sensori
 
-Sensore utilizzato: DS18B20
+##Sensore utilizzato: DS18B20 (Sensore Temperatura)
 
 ### 1.1 Acquisizione dati
 
@@ -192,11 +192,7 @@ Sensore utilizzato: DS18B20
 
 -   Ripartenza del ciclo tornando al punto 1.1.
 
-----------
-
-## 2.0 — Ciclo di misurazione e acquisizione (peso)
-
-Sensore utilizzato: HX711
+##Sensore utilizzato: HX711 (Peso)
 
 ### 2.1 Lettura ADC non pronta
 
@@ -273,11 +269,7 @@ Sensore utilizzato: HX711
 -   **ERR-PS-2.15**  — Duplicazione misura  
     La stessa misura viene inviata più volte, generando duplicazioni per assenza di controllo di unicità.
 
-----------
-
-## 3.0 — Ciclo di misurazione e acquisizione (umidità)
-
-Sensore utilizzato: SHT21 - HTU21
+##Sensore utilizzato: SHT21 - HTU21 (umidità)
 
 ### 3.1 Impossibile rilevare il sensore dell'umidità
 

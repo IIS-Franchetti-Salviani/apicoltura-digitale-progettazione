@@ -123,7 +123,17 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
 > Obiettivo: strutturare i dati in modo che siano consultabili, confrontabili e “puliti”.
 
 ### Requisiti funzionali
-- **RF-DB-01 — Anagrafiche**: Il database deve gestire le entità: `Apiario`, `Arnia`, `Sensore`, `Notifica`, `Rilevazione`, `Utente`.  
+- **RF-DB-01 — Anagrafiche**: Ecco una versione riscritta in **italiano corretto e più chiaro**:
+
+----------
+
+Il database deve gestire le seguenti entità: `Apiario`, `Arnia`, `Sensore`, `Rilevazione`, `Notifica` e `Utente`.
+L’entità `Apiario` è collegata ad `Arnia` e rappresenta un insieme di arnie. Essa è caratterizzata dagli attributi id, nome, posizione e luogo. La posizione indica le coordinate geografiche, mentre il luogo è una stringa che rappresenta il nome del posto associato alle coordinate inserite.
+L’entità `Arnia` è collegata sia ad `Apiario` sia a `Sensore` e contiene gli attributi id, data di installazione e piena.
+L’entità `Sensore` è collegata sia ad`Arnia` sia a `Rilevazione` e presenta gli attributi id, stato (attivo o spento) e tipo, che serve a identificare l’unità di misura da associare al dato rilevato.
+L’entità `Rilevazione` è collegata sia a `Sensore` sia a `Notifica` e include come attributi id, dato, data e ora.
+Infine, l’entità `Notifica` è collegata a `Rilevazione` e possiede gli attributi id, titolo e descrizione.
+
 - **RF-DB-02 — Tipo utente**: Devono esistere diversi tipi di utente: `Admin`, `Apicoltore`. L' `Admin` ha il compito di gestire il software, lui a differenza dell'apicoltore può gestire gli utenti che hanno fatto l'accesso all'interno del software, esso può leggere le informazioni nella tabella delle entità: `Apiari`, `Arnie`, `Sensori`, `Rilevazioni` e `Notifiche`. Invece può scrivere all'interno delle entità: `Apiari`, `Arnie` e `Sensori` ma con l'eccezione che sui sensori può solo modificare le soglie. L'`Apicoltore` può accedere al software e visualizzare i dati che servono per controllare le arnie, lui può leggere leggere le informazioni nella tabella delle entità: `Apiari`, `Arnie`, `Sensori`, `Rilevazioni` e `Notifiche`. Invece esso può scrivere all'interno delle entità: `Apiari`, `Arnie` e `Sensori` ma con l'eccezione che sui sensori può solo modificare le soglie. 
 - **RF-DB-03 — Dati del database**: Il database deve ricevere i dati:
 -- Rumore (dB)

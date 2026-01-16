@@ -1,15 +1,10 @@
----
-config:
-  theme: redux
-  layout: fixed
----
 flowchart TB
     A(["Start"]) --> E["Lettura soglia MIN (DB)"]
     E --> F["Lettura soglia MAX (DB)"]
     F --> G["Presa campione peso (ESP)"]
     G --> H["Taratura / Conversione peso (kg)"]
     I{"Peso > MAX?"} -- Sì --> J["Alert: peso sopra soglia"]
-    I -- No --> K{"Peso &lt; MIN?"}
+    I -- No --> K{"Peso < MIN?"}
     K -- Sì --> L["Alert: peso sotto soglia"]
     K -- No --> M["Peso OK"]
     M --> N["Associa data e ora"]
@@ -18,10 +13,14 @@ flowchart TB
     n1 -- Sì --> I
     n1 -- No --> n4@{ label: "<span style=\"color:\">Salva campione e timestamp su ESP32</span>" }
     n4 --> n5@{ label: "<span style=\"color:\">Invio Alert a DB</span>" }
-    n5 --> P["Ritorno Deep Sleep 3 ore"]
+    n5 --> P["Aspetta 3 ore"]
     J --> P
     L --> P
     O --> P
+
+    %% freccia di ritorno per il ciclo
+    P --> A
+
     n2[" "]
     n3[" "]
 

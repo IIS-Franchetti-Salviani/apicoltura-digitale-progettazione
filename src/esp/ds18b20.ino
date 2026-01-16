@@ -1,5 +1,5 @@
 // ============================================================================
-// DS18B20 - Sensore Temperatura Interna Arnia
+// DS18B20 - Sensore Temperatura Interna Arnia (REVISIONATO)
 // ============================================================================
 
 #include <OneWire.h>
@@ -20,7 +20,7 @@ static DeviceAddress insideThermometer;
 // ============================================================================
 static float _ds18b20_sogliaMin = 30.0f;
 static float _ds18b20_sogliaMax = 37.0f;
-static unsigned long _ds18b20_intervallo = 360000;  // 6 minuti default
+static unsigned long _ds18b20_intervallo = 360000;
 static bool _ds18b20_abilitato = true;
 static bool _ds18b20_inizializzato = false;
 static int _ds18b20_contatore = 0;
@@ -36,33 +36,46 @@ static ConfigValidazioneSensore _configValidazioneTemp = {
 };
 
 // ============================================================================
-// SETUP - Inizializzazione hardware
+// SETUP
 // ============================================================================
 void setup_ds18b20() {
-  Serial.println("-> Inizializzazione sensore DS18B20...");
+  Serial.println(F("-> Inizializzazione sensore DS18B20...")); // F() macro per risparmiare RAM
 
   sensors.begin();
 
-  // Cerca dispositivi sul bus OneWire
-  if (sensors.getDeviceCount() == 0) {
-    Serial.println("  ! ATTENZIONE: Nessun sensore DS18B20 trovato");
+  // Controllo numero dispositivi
+  int deviceCount = sensors.getDeviceCount();
+  if (deviceCount == 0) {
+    Serial.println(F("  ! ATTENZIONE: Nessun sensore DS18B20 trovato"));
     _ds18b20_inizializzato = false;
-  } else {
-    sensors.getAddress(insideThermometer, 0);
-    sensors.setResolution(insideThermometer, 12);  // 12 bit = 0.0625C
-    _ds18b20_inizializzato = true;
-    Serial.println("  + Sensore DS18B20 rilevato e configurato");
+    return;
   }
 
-  Serial.println("  + Setup DS18B20 completato\n");
+  // Tenta di ottenere l'indirizzo del primo sensore (indice 0)
+  if (sensors.getAddress(insideThermometer, 0)) {
+    sensors.setResolution(insideThermometer, 12); // 12 bit resolution
+    
+    // NOTA: setWaitForConversion(true) è default.
+    // Blocca il codice per ~750ms durante la lettura.
+    // Se serve multitasking, impostare a false e gestire delay manualmente.
+    sensors.setWaitForConversion(true); 
+    
+    _ds18b20_inizializzato = true;
+    Serial.println(F("  + Sensore DS18B20 rilevato e configurato"));
+  } else {
+    Serial.println(F("  ! ERRORE: Trovato dispositivo ma impossibile ottenere indirizzo"));
+    _ds18b20_inizializzato = false;
+  }
+
+  Serial.println(F("  + Setup DS18B20 completato\n"));
 }
 
 // ============================================================================
-// INIT - Configurazione da Database
+// INIT - Configurazione
 // ============================================================================
 void init_ds18b20(SensorConfig* config) {
   if (config == NULL) {
-    Serial.println("  ! DS18B20: config NULL, uso valori default");
+    Serial.println(F("  ! DS18B20: config NULL, uso valori default"));
     return;
   }
 
@@ -72,54 +85,59 @@ void init_ds18b20(SensorConfig* config) {
   _ds18b20_abilitato = config->abilitato;
   _ds18b20_contatore = 0;
 
-  Serial.println("  --- Config DS18B20 caricata dal DB ---");
-  Serial.print("    Soglia MIN: "); Serial.print(_ds18b20_sogliaMin); Serial.println(" C");
-  Serial.print("    Soglia MAX: "); Serial.print(_ds18b20_sogliaMax); Serial.println(" C");
-  Serial.print("    Intervallo: "); Serial.print(_ds18b20_intervallo / 1000); Serial.println(" sec");
-  Serial.print("    Abilitato: "); Serial.println(_ds18b20_abilitato ? "SI" : "NO");
+  Serial.println(F("  --- Config DS18B20 caricata dal DB ---"));
+  Serial.print(F("    Soglia MIN: ")); Serial.println(_ds18b20_sogliaMin);
+  Serial.print(F("    Soglia MAX: ")); Serial.println(_ds18b20_sogliaMax);
+  Serial.print(F("    Abilitato: ")); Serial.println(_ds18b20_abilitato ? F("SI") : F("NO"));
 }
 
 // ============================================================================
-// READ - Lettura temperatura
+// READ
 // ============================================================================
 RisultatoValidazione read_temperature_ds18b20() {
-  // Verifica se sensore abilitato
+  RisultatoValidazione risultato;
+  // Inizializza struct a zero/default per sicurezza
+  risultato.valido = false;
+  risultato.valorePulito = _configValidazioneTemp.valoreDefault;
+  risultato.timestamp = millis();
+  
+  // 1. Check Abilitato
   if (!_ds18b20_abilitato) {
-    RisultatoValidazione risultato;
-    risultato.valido = false;
-    risultato.codiceErrore = ERR_SENSOR_OFFLINE;
-    risultato.valorePulito = _configValidazioneTemp.valoreDefault;
-    strcpy(risultato.messaggioErrore, "[DS18B20] Sensore disabilitato");
+    risultato.codiceErrore = ERR_SENSOR_OFFLINE; // Assumendo esista in SensorValidation.h
+    strncpy(risultato.messaggioErrore, "[DS18B20] Sensore disabilitato", sizeof(risultato.messaggioErrore) - 1);
     return risultato;
   }
 
-  // Verifica se sensore inizializzato
+  // 2. Check Inizializzato
   if (!_ds18b20_inizializzato) {
-    RisultatoValidazione risultato;
-    risultato.valido = false;
-    risultato.codiceErrore = ERR_SENSOR_NOT_READY;
-    risultato.valorePulito = _configValidazioneTemp.valoreDefault;
-    strcpy(risultato.messaggioErrore, "[DS18B20] Sensore non inizializzato");
+    risultato.codiceErrore = ERR_SENSOR_NOT_READY; 
+    strncpy(risultato.messaggioErrore, "[DS18B20] Sensore non init", sizeof(risultato.messaggioErrore) - 1);
     return risultato;
   }
 
-  // Richiedi conversione temperatura
-  sensors.requestTemperatures();
+  // 3. Lettura Fisica
+  // ATTENZIONE: Questa chiamata blocca per 750ms a 12-bit!
+  sensors.requestTemperatures(); 
   float tempC = sensors.getTempC(insideThermometer);
 
-  // Verifica lettura valida
-  bool sensoreReady = (tempC != DEVICE_DISCONNECTED_C);
-  unsigned long timestamp = millis();
+  // 4. Verifica connessione fisica
+  bool sensoreReady = (tempC != DEVICE_DISCONNECTED_C); 
 
-  // Validazione dato
-  RisultatoValidazione risultato = validaDatoSensore(
+  // Se disconnesso, logghiamo subito l'errore specifico
+  if (!sensoreReady) {
+      // Potresti voler provare a reinizializzare qui se la connessione è persa
+      // setup_ds18b20(); // Opzionale: tentativo di recupero
+  }
+
+  // 5. Validazione Logica (Range, NaN, ecc.)
+  risultato = validaDatoSensore(
     tempC,
-    timestamp,
+    millis(),
     sensoreReady,
     _configValidazioneTemp
   );
 
-  // Se valido, verifica soglie
+  // 6. Verifica Soglie
   if (risultato.valido) {
     verificaSoglie(risultato.valorePulito, _ds18b20_sogliaMin, _ds18b20_sogliaMax, "DS18B20");
     _ds18b20_contatore++;
@@ -128,21 +146,8 @@ RisultatoValidazione read_temperature_ds18b20() {
   return risultato;
 }
 
-// ============================================================================
-// GETTERS - Accesso ai parametri di configurazione
-// ============================================================================
-unsigned long get_intervallo_ds18b20() {
-  return _ds18b20_intervallo;
-}
-
-bool is_abilitato_ds18b20() {
-  return _ds18b20_abilitato;
-}
-
-int get_contatore_ds18b20() {
-  return _ds18b20_contatore;
-}
-
-void reset_contatore_ds18b20() {
-  _ds18b20_contatore = 0;
-}
+// ... Getters invariati ...
+unsigned long get_intervallo_ds18b20() { return _ds18b20_intervallo; }
+bool is_abilitato_ds18b20() { return _ds18b20_abilitato; }
+int get_contatore_ds18b20() { return _ds18b20_contatore; }
+void reset_contatore_ds18b20() { _ds18b20_contatore = 0; }

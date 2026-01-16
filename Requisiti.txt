@@ -1,0 +1,102 @@
+
+@ -186,42 +186,58 @@ Perché è meglio? Perché ora sappiamo **quanto spesso**, **dove finisce il dat
+
+### Requisiti funzionali
+
+-   **RF-NET-01 — Router dedicato all’apiario**:  
+Deve essere utilizzato un router adeguato per ambienti esterni(67/68) e connessioni M2M/IoT (es. router STRONG o equivalente), in grado di garantire stabilità di connessione e gestione remota.
+    
+-   **RF-NET-02— Scelta del gestore di rete**:  
+Il gestore di connettività deve essere selezionato in base alla copertura reale nella zona dell’apiario, verificata tramite test sul campo (es. test di segnale e velocità).
+
+**RF-NET-03 — Router dedicato all’apiario:**  
+Deve essere utilizzato un router adeguato lte con sim all'interno di in una scatola(IP67/IP68), in grado di garantire stabilità di connessione.
+
+**RF-NET-04 — Connessione ESP32 al router**
+
+I dispositivi installati nell’arnia (es. **ESP32-CAM**) devono collegarsi al router tramite **Wi-Fi in modalità Station (WIFI_STA)** utilizzando SSID e password configurati nel firmware.
+
+In particolare:
+
+-   L’ESP32 si connette automaticamente al router all’avvio
+    
+-   L’indirizzo IP locale viene assegnato dal router tramite DHCP
+    
+-   Lo stato della connessione deve essere verificabile via seriale o remoto
+
+**RF-NET-05 — Scelta del gestore di rete:**  
+Il gestore di connettività deve essere selezionato in base alla copertura reale nella zona dell’apiario, verificata tramite test sul campo (es. test di segnale e velocità). Il router deve poter assegnare indirizzi IP ai dispositivi tramite DHCP o permettere IP statici opzionali.
+
+**RF-NET-06 — Trasmissione dati automatica:**  
+Il sistema deve trasmettere i dati raccolti dall’arnia al server senza intervento manuale dell’utente.
+
+-  I dispositivi collocati nell’arnia ricevono un IP locale dal router.
+    
+-   **RF-NET-07— Trasmissione dati automatica**:  
+Il sistema deve trasmettere i dati raccolti dall’arnia al server senza intervento manuale dell’utente.
+-  Il router funge da gateway per comunicare con lo smartphone e il server.
+    
+-   **RF-NET-08 — Ridotta necessità di manutenzione**:  
+L’architettura di rete deve essere progettata per richiedere il minimo intervento di manutenzione ordinaria da parte dell’apicoltore.
+-  La comunicazione deve garantire la consegna dei dati in tempo reale e la possibilità di controllo remoto dell’arnia tramite smartphone o interfaccia web.
+    
+
+**RF-NET-09 — Ridotta necessità di manutenzione:**  
+L’architettura di rete deve richiedere il minimo intervento di manutenzione ordinaria da parte dell’apicoltore.
+
+**RF-NET-10 — Ridondanza della comunicazione:**  
+Il sistema deve garantire la trasmissione dei dati anche in caso di interruzione temporanea della connessione principale, tramite memorizzazione locale dei dati, assicurando la continuità del servizio.
+
+**RF-NET-11 — Controllo priorità dei dati:**  
+Il sistema deve gestire la priorità dei dati trasmessi, dando precedenza ai dati critici (es. allarmi di temperatura o umidità dell’arnia) rispetto ai dati di monitoraggio ordinari, garantendo che le informazioni più importanti arrivino tempestivamente anche in condizioni di rete limitata.
+
+----------
+
+### Requisiti non funzionali
+
+-   **RNF-NET-01 — Alimentazione autonoma**:  
+    Il sistema di rete (router e device) deve essere alimentato tramite batteria integrata, alloggiata in un box di plastica idrorepellente per la protezione dagli agenti atmosferici.
+    
+-   **RNF-NET-02 — Energia rinnovabile**:  
+    Deve essere previsto un pannello solare posizionato in modo strategico per massimizzare l’esposizione alla luce solare e garantire la ricarica continua della batteria.
+    
+-   **RNF-NET-03 — Continuità operativa senza rete elettrica**:  
+    In assenza di alimentazione elettrica, il router e i dispositivi devono continuare a funzionare esclusivamente tramite pannello solare e batteria.
+    
+-   **RNF-NET-04 — Efficienza energetica**:  
+    Il consumo energetico mensile dell’intero sistema deve essere minimo e compatibile con l’alimentazione solare prevista.
+    
+-   **RNF-NET-05 — Resistenza ambientale**:  
+    I componenti devono operare correttamente in presenza di variazioni di temperatura e umidità, riducendo il rischio di ossidazione e degrado dei materiali.
+    
+-   **RNF-NET-06 — Calcolo e monitoraggio dei consumi**:  
+    Deve essere effettuato un calcolo preventivo del consumo energetico complessivo del sistema per garantire l’autonomia richiesta e il corretto dimensionamento di batteria e pannello solare.
+
+
+**RNF-NET-07 — Alimentazione autonoma:**  
+Il sistema di rete (router e dispositivi) deve essere alimentato tramite batteria integrata, protetta da un box resistente agli agenti atmosferici.
+
+---
+**RNF-NET-08 — Energia rinnovabile:**  
+Deve essere previsto un pannello solare posizionato in modo strategico per massimizzare l’esposizione alla luce solare e garantire la ricarica continua della batteria.
+
+**RNF-NET-09 — Continuità operativa senza rete elettrica:**  
+In assenza di alimentazione elettrica, il router e i dispositivi devono continuare a funzionare.
+
+**RNF-NET-10 — Efficienza energetica:**  
+Il consumo energetico mensile dell’intero sistema deve essere minimo e compatibile con l’alimentazione solare prevista.
+
+**RNF-NET-11 — Resistenza ambientale:**  
+I componenti devono operare correttamente in presenza di variazioni di temperatura e umidità, riducendo il rischio di ossidazione e degrado dei materiali.
+
+**RNF-NET-12 — Calcolo e monitoraggio dei consumi energetici:**  
+Deve essere effettuato un calcolo preventivo del consumo energetico complessivo del sistema per garantire l’autonomia richiesta e il corretto dimensionamento di batteria e pannello solare.
+
+**RNF-NET-13 — Gestione indirizzi IP e rete:**  
+Il sistema deve supportare configurazioni IP dinamiche (DHCP) e statiche per tutti i dispositivi, garantendo la comunicazione sicura e affidabile tra arnia, router, smartphone e server cloud. Deve permettere il monitoraggio remoto degli IP e dei dispositivi connessi, assicurando tracciabilità e continuità della trasmissione dati.
+
+**RNF-NET-14 — Calcolo consumo dati per scelta del gestore:**  
+Prima di selezionare l’offerta del gestore di rete, deve essere effettuato un calcolo del consumo dati previsto dal sistema per scegliere l’offerta più adatta ed evitare costi inutili.---
+
+# 8) Mini nota: cos’è un file Markdown (.md) e perché lo usiamo
+**Markdown** è un modo semplice per scrivere documenti usando solo testo, ma con una sintassi leggera per titoli, elenchi, grassetti e blocchi di codice.  

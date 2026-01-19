@@ -3,7 +3,8 @@
 // ============================================================================
 
 #include <Wire.h>
-#include "Adafruit_HTU21DF.h"
+#include <esp_task_wdt.h>
+#include "Adafruit_HTU21DF.h" //Adafruit v1.1.2 + Adafruit.BusIO.Register
 #include "SensorValidation.h"
 
 // ============================================================================
@@ -79,17 +80,21 @@ static void scritturaDatoNelDB_sht21_temperature(const RisultatoValidazione* ris
 // SETUP
 // ============================================================================
 void setup_sht21() {
-  Serial.println("-> Inizializzazione sensore SHT21.. .");
+  Serial.println("-> Inizializzazione sensore SHT21...");
+  esp_task_wdt_reset();
+
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setPins(15, 14);
+  esp_task_wdt_reset();
 
-  if (! sht21.begin()) {
-    Serial.println("  !  ERRORE:  Sensore SHT21 non trovato!");
+  if (!sht21.begin()) {
+    Serial.println("  ! ERRORE: Sensore SHT21 non trovato!");
     _sht21_inizializzato = false;
   } else {
     _sht21_inizializzato = true;
     Serial.println("  + Sensore SHT21 inizializzato");
   }
+  esp_task_wdt_reset();
 
   Serial.println("  + Setup SHT21 completato\n");
 }

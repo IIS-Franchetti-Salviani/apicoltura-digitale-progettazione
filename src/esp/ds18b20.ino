@@ -2,8 +2,9 @@
 // DS18B20 - MODULO INTEGRATO (LETTURA + VALIDAZIONE + SOGLIE)
 // ============================================================================
 
-#include <OneWire.h>
-#include <DallasTemperature.h>
+#include <OneWire.h> //Paul Stoffregen 2.3.8 https://www.pjrc.com/teensy/td_libs_OneWire.html
+#include <DallasTemperature.h> //Miles Burton 4.0.5
+#include <esp_task_wdt.h>
 #include "SensorValidation.h"
 
 // --- CONFIGURAZIONE HARDWARE ---
@@ -41,9 +42,13 @@ void printAddress(uint8_t* deviceAddress);
 // ============================================================================
 void setup_ds18b20() {
   Serial.println(F("-> Avvio scansione bus OneWire..."));
-  
+
+  esp_task_wdt_reset();
   sensors.begin();
+  esp_task_wdt_reset();
+
   int deviceCount = sensors.getDeviceCount();
+  esp_task_wdt_reset();
 
   if (deviceCount == 0) {
     Serial.println(F("  ! ERRORE: Nessun sensore DS18B20 trovato sul pin 2"));
@@ -63,8 +68,9 @@ void setup_ds18b20() {
     Serial.println();
 
     sensors.setResolution(insideThermometer, 12);
-    sensors.setWaitForConversion(true); 
-    
+    sensors.setWaitForConversion(true);
+    esp_task_wdt_reset();
+
     Serial.print(F("  + Modalità alimentazione: "));
     Serial.println(sensors.isParasitePowerMode() ? F("PARASITE") : F("ESTERNA"));
 

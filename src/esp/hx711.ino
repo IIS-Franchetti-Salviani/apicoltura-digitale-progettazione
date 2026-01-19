@@ -3,7 +3,8 @@
 // ============================================================================
 
 #include <Arduino.h>
-#include "HX711.h"
+#include <esp_task_wdt.h>
+#include "HX711.h" //HX711 Arduino Library v0.7.5 di Bogdan Necula
 #include "SensorValidation.h"
 
 // ============================================================================
@@ -48,12 +49,14 @@ static ConfigValidazioneSensore _configValidazionePeso = {
 // ============================================================================
 void setup_hx711() {
   Serial.println("-> Inizializzazione HX711...");
+  esp_task_wdt_reset();
 
   pinMode(HX711_DOUT_PIN, INPUT);
   pinMode(HX711_SCK_PIN, OUTPUT);
   digitalWrite(HX711_SCK_PIN, LOW);
 
   scale.begin(HX711_DOUT_PIN, HX711_SCK_PIN);
+  esp_task_wdt_reset();
 
   if (!scale.is_ready()) {
     Serial.println("  ! HX711 NON pronto (controlla collegamenti)");
@@ -69,6 +72,7 @@ void setup_hx711() {
 // INIT - Configurazione + calibrazione
 // ============================================================================
 void init_hx711(SensorConfig* config) {
+  esp_task_wdt_reset();
 
   if (!_hx711_inizializzato) {
     Serial.println("  ! HX711 non inizializzato");
@@ -83,7 +87,9 @@ void init_hx711(SensorConfig* config) {
   }
 
   scale.set_scale(_hx711_calibration_factor);
+  esp_task_wdt_reset();
   scale.tare();
+  esp_task_wdt_reset();
 
   _hx711_offset = scale.get_offset();
   _hx711_tarato = true;
@@ -183,6 +189,32 @@ RisultatoValidazione read_weight_hx711() {
   scale.power_up();
 
   return risultato;
+}
+
+// ============================================================================
+// CALIBRAZIONE DA SERVER
+// ============================================================================
+void calibrate_hx711(float calibration_factor, long offset) {
+  esp_task_wdt_reset();
+
+  if (!_hx711_inizializzato) {
+    Serial.println("  ! HX711 non inizializzato, calibrazione ignorata");
+    return;
+  }
+
+  if (calibration_factor != 0) {
+    _hx711_calibration_factor = calibration_factor;
+  }
+  _hx711_offset = offset;
+
+  scale.set_scale(_hx711_calibration_factor);
+  scale.set_offset(_hx711_offset);
+  _hx711_tarato = true;
+  esp_task_wdt_reset();
+
+  Serial.println("  --- HX711 Calibrazione applicata ---");
+  Serial.print("    Calibration factor: "); Serial.println(_hx711_calibration_factor);
+  Serial.print("    Offset: "); Serial.println(_hx711_offset);
 }
 
 // ============================================================================

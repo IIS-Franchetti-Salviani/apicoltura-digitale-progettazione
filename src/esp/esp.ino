@@ -9,6 +9,7 @@
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <ArduinoOTA.h>
+uint32_t last_ota_time = 0;
 
 // ============================================================================
 // CONFIGURAZIONE WI-FI MULTIPLI

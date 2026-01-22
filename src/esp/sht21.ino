@@ -10,8 +10,8 @@
 // ============================================================================
 // CONFIGURAZIONE HARDWARE
 // ============================================================================
-#define I2C_SDA 15
-#define I2C_SCL 14
+#define I2C_SDA 12
+#define I2C_SCL 13
 
 static Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
 

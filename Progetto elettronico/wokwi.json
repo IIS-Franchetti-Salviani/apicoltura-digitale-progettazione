@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-breadboard-mini", "id": "bb1", "top": -145.4, "left": -88.8, "attrs": {} },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-dht22", "id": "dht1", "top": -182.1, "left": -197.4, "attrs": {} },
+    {
+      "type": "wokwi-hx711",
+      "id": "cell1",
+      "top": -45.4,
+      "left": 137,
+      "attrs": { "type": "50kg" }
+    },
+    { "type": "board-ds18b20", "id": "temp1", "top": 94.87, "left": 186.48, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "cell1:GND", "esp:GND.2", "black", [ "h0" ] ],
+    [ "cell1:DT", "esp:15", "green", [ "h-9.6", "v181.9" ] ],
+    [ "cell1:SCK", "esp:14", "green", [ "h-192", "v-29.6" ] ],
+    [ "temp1:GND", "esp:GND.1", "black", [ "v144", "h-288", "v-124.8" ] ],
+    [ "temp1:DQ", "esp:D2", "green", [ "v124.8", "h-268.8", "v-86.4" ] ],
+    [ "esp:GND.3", "bb1:17t.a", "black", [ "h14.44", "v-220.8" ] ],
+    [ "dht1:VCC", "bb1:1b.i", "red", [ "v28.8", "h105.6" ] ],
+    [ "dht1:GND", "bb1:17t.b", "black", [ "v-9.6", "h249.6", "v-48" ] ],
+    [ "dht1:SDA", "esp:D3", "green", [ "v0" ] ],
+    [ "cell1:VCC", "esp:5V", "red", [ "h0", "v220.8", "h-192" ] ],
+    [ "esp:3V3", "bb1:1b.j", "red", [ "h-91.01", "v28.8", "h-19.2" ] ],
+    [ "temp1:VCC", "bb1:1b.h", "red", [ "v220.8", "h-364.8", "v-124.8" ] ]
+  ],
+  "dependencies": {}
+}

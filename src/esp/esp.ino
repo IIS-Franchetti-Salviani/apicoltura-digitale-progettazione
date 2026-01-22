@@ -2,6 +2,10 @@
 // ESP32-CAM - Main Controller Sistema Monitoraggio Arnia
 // ============================================================================
 
+// adding url https://jihulab.com/esp-mirror/espressif/arduino-esp32.git
+// board esp32 Expressif 3.3.5
+
+
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <esp_task_wdt.h>

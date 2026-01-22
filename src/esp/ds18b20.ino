@@ -2,7 +2,7 @@
 // DS18B20 - MODULO INTEGRATO (LETTURA + VALIDAZIONE + SOGLIE)
 // ============================================================================
 
-#include <OneWire.h> //Paul Stoffregen 2.3.8 https://www.pjrc.com/teensy/td_libs_OneWire.html
+#include <OneWire.h> //Jim Studt  2.3.8 https://www.pjrc.com/teensy/td_libs_OneWire.html
 #include <DallasTemperature.h> //Miles Burton 4.0.5
 #include <esp_task_wdt.h>
 #include "SensorValidation.h"

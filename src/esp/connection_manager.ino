@@ -5,7 +5,7 @@
 // Puo' essere sostituito con implementazioni diverse (REST, MySQL, file, ecc.)
 // senza modificare il resto del firmware.
 // ============================================================================
-
+//LIbreria necessaria: ArduinoJson v7.4.2 Benoit Blanc..
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>

@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920">
+  <defs>
+    <style>
+      .bg { fill: #f7f3ea; }
+      .board { fill: #1f4b4a; rx: 24; ry: 24; }
+      .sensor { fill: #fffdf7; stroke: #2c2c2c; stroke-width: 2; rx: 18; ry: 18; }
+      .pin { fill: #f4efe1; stroke: #153737; stroke-width: 2; rx: 12; ry: 12; }
+      .note { fill: #fff4da; stroke: #c88a1c; stroke-width: 2; rx: 18; ry: 18; }
+      .title { font: 700 34px 'Segoe UI', Arial, sans-serif; fill: #142626; }
+      .subtitle { font: 600 19px 'Segoe UI', Arial, sans-serif; fill: #f4efe1; }
+      .text { font: 600 20px 'Segoe UI', Arial, sans-serif; fill: #1d1d1d; }
+      .small { font: 500 16px 'Segoe UI', Arial, sans-serif; fill: #333; }
+      .pintext { font: 700 18px 'Segoe UI', Arial, sans-serif; fill: #153737; }
+      .wire33 { stroke: #d14d41; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .wiregnd { stroke: #39434d; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .wirea { stroke: #2f6fed; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .wireb { stroke: #0f8b6d; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .wirec { stroke: #a24dd8; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .wired { stroke: #d96b1e; stroke-width: 6; fill: none; stroke-linecap: round; }
+      .label { font: 700 16px 'Segoe UI', Arial, sans-serif; fill: #222; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="920"/>
+  <text class="title" x="60" y="70">Schema Collegamenti ESP32-CAM</text>
+  <text class="small" x="60" y="105">Profilo firmware attuale: senza microSD, LED flash disabilitato, camera lasciata montata</text>
+
+  <rect class="board" x="60" y="150" width="430" height="660"/>
+  <text class="subtitle" x="90" y="205">ESP32-CAM</text>
+  <text class="small" x="90" y="235" fill="#f4efe1">Pin usati dal firmware</text>
+
+  <rect class="pin" x="95" y="280" width="160" height="54"/>
+  <text class="pintext" x="120" y="314">3V3</text>
+
+  <rect class="pin" x="95" y="352" width="160" height="54"/>
+  <text class="pintext" x="120" y="386">GND</text>
+
+  <rect class="pin" x="95" y="444" width="160" height="54"/>
+  <text class="pintext" x="120" y="478">GPIO15</text>
+  <text class="small" x="285" y="478" fill="#f4efe1">DS18B20 DATA</text>
+
+  <rect class="pin" x="95" y="516" width="160" height="54"/>
+  <text class="pintext" x="120" y="550">GPIO13</text>
+  <text class="small" x="285" y="550" fill="#f4efe1">SHT21 SDA</text>
+
+  <rect class="pin" x="95" y="588" width="160" height="54"/>
+  <text class="pintext" x="120" y="622">GPIO14</text>
+  <text class="small" x="285" y="622" fill="#f4efe1">SHT21 SCL</text>
+
+  <rect class="pin" x="95" y="660" width="160" height="54"/>
+  <text class="pintext" x="120" y="694">GPIO2</text>
+  <text class="small" x="285" y="694" fill="#f4efe1">HX711 DOUT</text>
+
+  <rect class="pin" x="95" y="732" width="160" height="54"/>
+  <text class="pintext" x="120" y="766">GPIO4</text>
+  <text class="small" x="285" y="766" fill="#f4efe1">HX711 SCK</text>
+
+  <rect class="sensor" x="740" y="170" width="520" height="170"/>
+  <text class="text" x="775" y="215">DS18B20</text>
+  <text class="small" x="775" y="255">VDD -&gt; 3V3</text>
+  <text class="small" x="775" y="285">GND -&gt; GND</text>
+  <text class="small" x="775" y="315">DATA -&gt; GPIO15</text>
+  <rect class="note" x="1010" y="205" width="210" height="92"/>
+  <text class="label" x="1035" y="245">Pull-up 4.7k</text>
+  <text class="small" x="1035" y="270">tra DATA e 3V3</text>
+
+  <rect class="sensor" x="740" y="390" width="520" height="190"/>
+  <text class="text" x="775" y="435">SHT21 / HTU21D</text>
+  <text class="small" x="775" y="475">VCC -&gt; 3V3</text>
+  <text class="small" x="775" y="505">GND -&gt; GND</text>
+  <text class="small" x="775" y="535">SDA -&gt; GPIO13</text>
+  <text class="small" x="775" y="565">SCL -&gt; GPIO14</text>
+
+  <rect class="sensor" x="740" y="630" width="520" height="190"/>
+  <text class="text" x="775" y="675">HX711</text>
+  <text class="small" x="775" y="715">VCC -&gt; 3V3 consigliato</text>
+  <text class="small" x="775" y="745">GND -&gt; GND</text>
+  <text class="small" x="775" y="775">DOUT -&gt; GPIO2</text>
+  <text class="small" x="775" y="805">SCK -&gt; GPIO4</text>
+
+  <path class="wire33" d="M255 307 C450 307, 560 215, 740 215"/>
+  <path class="wire33" d="M255 307 C480 307, 560 450, 740 475"/>
+  <path class="wire33" d="M255 307 C490 307, 560 690, 740 715"/>
+  <path class="wire33" d="M255 307 C560 307, 775 250, 1010 250"/>
+
+  <path class="wiregnd" d="M255 379 C470 379, 560 285, 740 285"/>
+  <path class="wiregnd" d="M255 379 C470 379, 560 505, 740 505"/>
+  <path class="wiregnd" d="M255 379 C470 379, 560 745, 740 745"/>
+
+  <path class="wirea" d="M255 471 C500 471, 560 315, 740 315"/>
+  <path class="wireb" d="M255 543 C510 543, 560 535, 740 535"/>
+  <path class="wirec" d="M255 615 C510 615, 560 565, 740 565"/>
+  <path class="wired" d="M255 687 C510 687, 560 775, 740 775"/>
+  <path class="wirea" d="M255 759 C520 759, 560 805, 740 805"/>
+
+  <rect class="note" x="520" y="80" width="800" height="48"/>
+  <text class="label" x="545" y="111">Ricablaggio richiesto: DS18B20 GPIO2 -&gt; GPIO15, SHT21 SDA GPIO12 -&gt; GPIO13, SHT21 SCL GPIO13 -&gt; GPIO14, HX711 DOUT GPIO14 -&gt; GPIO2, HX711 SCK GPIO15 -&gt; GPIO4</text>
+
+  <rect class="note" x="520" y="840" width="760" height="48"/>
+  <text class="label" x="545" y="871">Nota: se il flashing USB fallisce, scollega temporaneamente HX711 DOUT da GPIO2 durante upload/reset.</text>
+</svg>

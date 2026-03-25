@@ -10,8 +10,11 @@
 // ============================================================================
 // CONFIGURAZIONE HARDWARE
 // ============================================================================
-#define I2C_SDA 12
-#define I2C_SCL 13
+// Su ESP32-CAM evitiamo GPIO12 perche' un pull-up esterno puo' alterare
+// i pin di strap al reset. GPIO13/GPIO14 sono la coppia I2C meno problematica
+// se non si usa la microSD.
+#define I2C_SDA 13
+#define I2C_SCL 14
 
 static Adafruit_HTU21DF sht21 = Adafruit_HTU21DF();
 
@@ -84,7 +87,6 @@ void setup_sht21() {
   esp_task_wdt_reset();
 
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setPins(15, 14);
   esp_task_wdt_reset();
 
   if (!sht21.begin()) {

@@ -11,8 +11,12 @@
 // ============================================================================
 // CONFIGURAZIONE HARDWARE
 // ============================================================================
-const int HX711_DOUT_PIN = 14;
-const int HX711_SCK_PIN = 15;
+// Profilo ESP32-CAM senza microSD:
+// - DOUT su GPIO2: in esecuzione normale il pin e' ignorato dal boot da flash,
+//   ma in modalita' download puo' richiedere di scollegare HX711 durante il flash.
+// - SCK su GPIO4: pin valido ma condiviso con il LED flash onboard.
+const int HX711_DOUT_PIN = 2;
+const int HX711_SCK_PIN = 4;
 
 // ============================================================================
 // OGGETTO HX711_ADC
@@ -62,9 +66,9 @@ void setup_hx711() {
 
   if (LoadCell.getTareTimeoutFlag()) {
     Serial.println("  ! TIMEOUT: Controlla cablaggio HX711");
-    Serial.println("    DOUT -> GPIO 14");
-    Serial.println("    SCK  -> GPIO 15");
-    Serial.println("    VCC  -> 5V");
+    Serial.println("    DOUT -> GPIO 2");
+    Serial.println("    SCK  -> GPIO 4");
+    Serial.println("    VCC  -> 3.3V (consigliato con ESP32-CAM)");
     Serial.println("    GND  -> GND");
     _hx711_inizializzato = false;
     return;

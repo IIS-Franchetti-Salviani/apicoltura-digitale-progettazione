@@ -1,4 +1,3 @@
-// ============================================================================
 // ESP32-CAM - Main Controller Sistema Monitoraggio Arnia
 // ============================================================================
 
@@ -39,6 +38,9 @@ WiFiMulti wifiMulti;
 // VARIABILI DEVICE
 // ============================================================================
 char deviceMacAddress[18] = "";
+// GPIO4 e' assegnato all'HX711 come clock. Disabilitiamo il LED di stato
+// onboard per evitare impulsi spurii sul sensore peso.
+int ledPin = -1;
 
 // ============================================================================
 // DICHIARAZIONE FUNZIONI DATA MANAGER (connection_manager.ino)
@@ -311,6 +313,11 @@ void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) 
 // SETUP PRINCIPALE
 // ============================================================================
 void setup() {
+  if (ledPin >= 0) {
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, HIGH);
+  }
+  
   Serial.begin(115200);
   delay(2000);
 
@@ -338,9 +345,25 @@ void setup() {
 
   if (connectWiFi()) {
     Serial.println("  + Wi-Fi connesso\n");
+
+    // Inizializza mDNS per OTA discovery
+    String hostname = "arnia-" + String(deviceMacAddress).substring(12);
+    hostname.replace(":", "");
+    if (MDNS.begin(hostname.c_str())) {
+      Serial.print("  + mDNS avviato: ");
+      Serial.print(hostname);
+      Serial.println(".local");
+    } else {
+      Serial.println("  ! mDNS non avviato");
+    }
   } else {
     Serial.println("  !  Wi-Fi non disponibile, modalita' offline\n");
   }
+
+  // Configura OTA con hostname
+  String otaHostname = "arnia-" + String(deviceMacAddress).substring(12);
+  otaHostname.replace(":", "");
+  ArduinoOTA.setHostname(otaHostname.c_str());
 
   // Password can be set with plain text (will be hashed internally)
   // The authentication uses PBKDF2-HMAC-SHA256 with 10,000 iterations
@@ -382,6 +405,7 @@ void setup() {
     });
 
   ArduinoOTA.begin();
+  Serial.println("  + OTA pronto\n");
 
   // FASE 2: Inizializzazione Data Manager
   Serial.println("FASE 2: INIZIALIZZAZIONE DATA MANAGER\n");

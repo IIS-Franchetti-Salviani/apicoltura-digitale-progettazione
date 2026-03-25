@@ -8,7 +8,10 @@
 #include "SensorValidation.h"
 
 // --- CONFIGURAZIONE HARDWARE ---
-#define ONE_WIRE_BUS 2
+// GPIO15 e' preferibile a GPIO2 su ESP32-CAM per il bus 1-Wire:
+// il pull-up del DS18B20 mantiene il pin alto al boot, condizione compatibile
+// con la logica di strap di MTDO/GPIO15.
+#define ONE_WIRE_BUS 15
 
 static OneWire oneWire(ONE_WIRE_BUS);
 static DallasTemperature sensors(&oneWire);
@@ -51,7 +54,7 @@ void setup_ds18b20() {
   esp_task_wdt_reset();
 
   if (deviceCount == 0) {
-    Serial.println(F("  ! ERRORE: Nessun sensore DS18B20 trovato sul pin 2"));
+    Serial.println(F("  ! ERRORE: Nessun sensore DS18B20 trovato sul pin 15"));
     _ds18b20_inizializzato = false;
     return;
   }

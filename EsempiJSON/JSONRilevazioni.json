@@ -2,5 +2,6 @@ ESEMPIO JSON RILEVAZIONI:
 
 {
   "ril_dato":10,
-  "ril_dataOra":"2025-10-12T08:12:00.000Z"
+  "ril_dataOra":"2025-10-12T08:12:00.000Z",
+  "ril_sea_id":0
 }

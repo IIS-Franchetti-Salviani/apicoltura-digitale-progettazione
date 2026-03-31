@@ -1,4 +1,3 @@
-// ============================================================================
 // ESP32-CAM - Main Controller Sistema Monitoraggio Arnia
 // ============================================================================
 
@@ -21,13 +20,13 @@ uint32_t last_ota_time = 0;
 const char* WIFI_NETWORKS[][2] = {
   {"Gruppo4Network", "Networks"},
   {"WIFI_LABORATORIO", "password_lab"},
-  {"WIFI_SCUOLA", "password_scuola"}
+  {"didattica", "FdWt101099stdZ%("}
 };
 const int NUM_NETWORKS = 3;
 
 // Configurazione server REST
-const char* REST_URL = "https://dbarniadigitale-0abe.restdb.io/rest/";
-const char* REST_KEY = "1fe80bc79adb61240bff1f82429757190c888";
+const char* REST_URL = "https://www.flip-flop.it/apicoltura-digitale/rest/";
+const char* REST_KEY = "ijy31qysljvd99d1pdelbyfemsje29nz";
 const int REST_TIMEOUT = 10000;
 
 // Configurazione watchdog
@@ -39,6 +38,9 @@ WiFiMulti wifiMulti;
 // VARIABILI DEVICE
 // ============================================================================
 char deviceMacAddress[18] = "";
+// GPIO4 e' assegnato all'HX711 come clock. Disabilitiamo il LED di stato
+// onboard per evitare impulsi spurii sul sensore peso.
+int ledPin = -1;
 
 // ============================================================================
 // DICHIARAZIONE FUNZIONI DATA MANAGER (connection_manager.ino)
@@ -105,7 +107,7 @@ bool configCaricata = false;
 void gestisciRisultatoSensore(RisultatoValidazione risultato) {
   if (risultato.valido) {
     Serial.println("  ✓ Lettura valida");
-    
+
     if (risultato.codiceErrore == ALERT_THRESHOLD_HIGH) {
       Serial.println("  ⚠ ALERT: Valore sopra soglia massima");
     } else if (risultato.codiceErrore == ALERT_THRESHOLD_LOW) {
@@ -114,8 +116,8 @@ void gestisciRisultatoSensore(RisultatoValidazione risultato) {
   } else {
     Serial.print("  ✗ Lettura NON valida - Codice errore: ");
     Serial.println(risultato.codiceErrore);
-    
-    switch(risultato.codiceErrore) {
+
+    switch (risultato.codiceErrore) {
       case ERROR_SENSOR_NOT_FOUND:
         Serial.println("    Sensore non trovato");
         break;
@@ -139,7 +141,7 @@ void gestisciRisultatoSensore(RisultatoValidazione risultato) {
 // ============================================================================
 bool intervalloTrascorso(unsigned long &ultimoCheck, unsigned long intervallo) {
   unsigned long adesso = millis();
-  
+
   if ((adesso - ultimoCheck) >= intervallo) {
     ultimoCheck = adesso;
     return true;
@@ -171,7 +173,7 @@ void initWiFi() {
   Serial.println(deviceMacAddress);
 
   WiFi.mode(WIFI_STA);
-  
+
   Serial.println("\n  Reti Wi-Fi configurate:");
   for (int i = 0; i < NUM_NETWORKS; i++) {
     wifiMulti.addAP(WIFI_NETWORKS[i][0], WIFI_NETWORKS[i][1]);
@@ -183,7 +185,7 @@ void initWiFi() {
 
 bool connectWiFi() {
   Serial.println("  Connessione alla rete migliore disponibile...");
-  
+
   uint8_t tentativi = 0;
   while (wifiMulti.run() != WL_CONNECTED && tentativi < 20) {
     delay(500);
@@ -191,7 +193,7 @@ bool connectWiFi() {
     tentativi++;
     esp_task_wdt_reset();
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnesso = true;
     Serial.println(" OK");
@@ -218,7 +220,7 @@ bool isWiFiConnected() {
 
 void checkWiFiConnection() {
   if (intervalloTrascorso(ultimoCheckWiFi, 10000)) {
-    
+
     if (wifiMulti.run() != WL_CONNECTED) {
       Serial.println("\n!  WiFi disconnesso, riconnessione automatica...");
       wifiConnesso = false;
@@ -311,6 +313,11 @@ void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) 
 // SETUP PRINCIPALE
 // ============================================================================
 void setup() {
+  if (ledPin >= 0) {
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, HIGH);
+  }
+
   Serial.begin(115200);
   delay(2000);
 
@@ -338,59 +345,76 @@ void setup() {
 
   if (connectWiFi()) {
     Serial.println("  + Wi-Fi connesso\n");
+
+    // Inizializza mDNS per OTA discovery
+    String hostname = "arnia-" + String(deviceMacAddress).substring(12);
+    hostname.replace(":", "");
+    if (MDNS.begin(hostname.c_str())) {
+      Serial.print("  + mDNS avviato: ");
+      Serial.print(hostname);
+      Serial.println(".local");
+    } else {
+      Serial.println("  ! mDNS non avviato");
+    }
   } else {
     Serial.println("  !  Wi-Fi non disponibile, modalita' offline\n");
   }
+
+  // Configura OTA con hostname
+  String otaHostname = "arnia-" + String(deviceMacAddress).substring(12);
+  otaHostname.replace(":", "");
+  ArduinoOTA.setHostname(otaHostname.c_str());
 
   // Password can be set with plain text (will be hashed internally)
   // The authentication uses PBKDF2-HMAC-SHA256 with 10,000 iterations
   ArduinoOTA.setPassword("!hJp^%RmYj7fQNmUjcd%");
   ArduinoOTA
-    .onStart([]() {
-      String type;
-      if (ArduinoOTA.getCommand() == U_FLASH) {
-        type = "sketch";
-      } else {  // U_SPIFFS
-        type = "filesystem";
-      }
+  .onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else {  // U_SPIFFS
+      type = "filesystem";
+    }
 
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
-    })
-    .onEnd([]() {
-      Serial.println("\nEnd");
-    })
-    .onProgress([](unsigned int progress, unsigned int total) {
-      if (millis() - last_ota_time > 500) {
-        Serial.printf("Progress: %u%%\n", (progress / (total / 100)));
-        last_ota_time = millis();
-      }
-    })
-    .onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) {
-        Serial.println("Auth Failed");
-      } else if (error == OTA_BEGIN_ERROR) {
-        Serial.println("Begin Failed");
-      } else if (error == OTA_CONNECT_ERROR) {
-        Serial.println("Connect Failed");
-      } else if (error == OTA_RECEIVE_ERROR) {
-        Serial.println("Receive Failed");
-      } else if (error == OTA_END_ERROR) {
-        Serial.println("End Failed");
-      }
-    });
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    Serial.println("Start updating " + type);
+  })
+  .onEnd([]() {
+    Serial.println("\nEnd");
+  })
+  .onProgress([](unsigned int progress, unsigned int total) {
+    if (millis() - last_ota_time > 500) {
+      Serial.printf("Progress: %u%%\n", (progress / (total / 100)));
+      last_ota_time = millis();
+    }
+  })
+  .onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
 
   ArduinoOTA.begin();
+  Serial.println("  + OTA pronto\n");
 
   // FASE 2: Inizializzazione Data Manager
   Serial.println("FASE 2: INIZIALIZZAZIONE DATA MANAGER\n");
   ServerConfig serverConfig;
-  
+
   snprintf(serverConfig.baseUrl, sizeof(serverConfig.baseUrl), "%s", REST_URL);
   snprintf(serverConfig.apiKey, sizeof(serverConfig.apiKey), "%s", REST_KEY);
   serverConfig.timeout = REST_TIMEOUT;
-  
+
   init_data_manager(&serverConfig);
 
   // FASE 3: Inizializzazione hardware sensori
@@ -421,9 +445,9 @@ void setup() {
 // ============================================================================
 void loop() {
   ArduinoOTA.handle();
-  
+
   esp_task_wdt_reset();
-  
+
   checkWiFiConnection();
 
   // DS18B20

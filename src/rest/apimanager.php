@@ -131,7 +131,7 @@ register_shutdown_function(function () use (
 // CORS headers per consentire richieste dal front-end
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, x-apikey, X-Requested-With, Accept");
 
 // Gestione preflight CORS
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -170,6 +170,7 @@ if (empty($segments[0])) {
         "messaggio" => "API Apicoltura Digitale",
         "versione" => "1.0",
         "risorse" => [
+            "_ping" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/_ping/",
             "apiari" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/apiari/",
             "arnie" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/arnie/",
             "sensori" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/sensori/",
@@ -191,6 +192,9 @@ $parametri = [];
 // Se presente un secondo segmento, interpretalo come ID della risorsa
 if (isset($segments[1]) && $segments[1] !== '') {
     switch ($risorsa) {
+        case '_ping':
+            $parametri['pingId'] = $segments[1];
+            break;
         case 'apiari':
             $parametri['apiarioId'] = $segments[1];
             break;

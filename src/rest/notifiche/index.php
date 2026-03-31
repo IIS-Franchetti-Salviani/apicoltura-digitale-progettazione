@@ -139,11 +139,19 @@ if ($method === 'GET') {
     }
     // GET tutte le notifiche
     else {
-        $notifiche = [];
-        $sql = "SELECT * FROM Notifica ORDER BY not_id DESC";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'notifiche');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($result && ($row = $result->fetch_assoc())) {
+        $notifiche = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             // Rilevazione (partial)
             $rilevazione = null;
             if (!empty($row["not_ril_id"])) {
@@ -169,8 +177,7 @@ if ($method === 'GET') {
             $notifiche[] = buildNotificaResponseRow($row, $baseUrl, $rilevazione);
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($notifiche, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($notifiche, $queryMeta);
     }
 }
 
@@ -402,4 +409,3 @@ elseif ($method === 'DELETE') {
 }
 
 $conn->close();
-

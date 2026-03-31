@@ -104,11 +104,19 @@ if ($method === 'GET') {
     }
     // GET tutti i sensori arnia
     else {
-        $sensoriArnia = [];
-        $sql = "SELECT * FROM SensoreArnia";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'sensoriarnia');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $sensoriArnia = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             // Arnia (partial)
             $arnia = null;
             $resArn = $conn->query("SELECT * FROM Arnia WHERE arn_id = {$row["sea_arn_id"]}");
@@ -153,8 +161,7 @@ if ($method === 'GET') {
             }
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($sensoriArnia, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($sensoriArnia, $queryMeta);
     }
 }
 

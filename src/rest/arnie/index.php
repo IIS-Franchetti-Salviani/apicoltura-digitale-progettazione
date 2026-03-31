@@ -68,11 +68,19 @@ if ($method === 'GET') {
     }
     // GET tutte le arnie
     else {
-        $arnie = [];
-        $sql = "SELECT * FROM Arnia";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'arnie');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $arnie = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             // Apiario (partial)
             $apiario = null;
             $resApi = $conn->query("SELECT * FROM Apiario WHERE api_id = {$row["arn_api_id"]}");
@@ -109,8 +117,7 @@ if ($method === 'GET') {
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($arnie, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($arnie, $queryMeta);
     }
 }
 

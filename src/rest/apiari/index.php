@@ -56,11 +56,19 @@ if ($method === 'GET') {
     }
     // GET tutti gli apiari
     else {
-        $apiari = [];
-        $sql = "SELECT * FROM Apiario";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'apiari');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $apiari = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             $arnie = [];
             $resArnie = $conn->query("SELECT * FROM Arnia WHERE arn_api_id = {$row["api_id"]}");
             while ($a = $resArnie->fetch_assoc()) {
@@ -83,8 +91,7 @@ if ($method === 'GET') {
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($apiari, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($apiari, $queryMeta);
     }
 }
 

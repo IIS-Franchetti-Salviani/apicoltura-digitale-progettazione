@@ -53,11 +53,19 @@ if ($method === 'GET') {
     }
     // GET tutti i sensori
     else {
-        $sensori = [];
-        $sql = "SELECT * FROM Sensore";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'sensori');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $sensori = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             $tipi = [];
             $resTip = $conn->query("SELECT * FROM TipoRilevazione WHERE tip_sen_id = {$row["sen_id"]}");
             while ($t = $resTip->fetch_assoc()) {
@@ -77,8 +85,7 @@ if ($method === 'GET') {
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($sensori, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($sensori, $queryMeta);
     }
 }
 

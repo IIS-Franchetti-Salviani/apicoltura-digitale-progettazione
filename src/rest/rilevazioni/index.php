@@ -96,11 +96,19 @@ if ($method === 'GET') {
     }
     // GET tutte le rilevazioni
     else {
-        $rilevazioni = [];
-        $sql = "SELECT * FROM Rilevazione ORDER BY ril_dataOra DESC";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'rilevazioni');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $rilevazioni = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             // Sensore arnia (partial)
             $sensoreArnia = null;
             $resSea = $conn->query("SELECT sa.*, tr.tip_tipologia, tr.tip_unita
@@ -128,8 +136,7 @@ if ($method === 'GET') {
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($rilevazioni, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($rilevazioni, $queryMeta);
     }
 }
 

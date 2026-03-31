@@ -155,21 +155,16 @@ if ($method === 'GET') {
             exit;
         }
 
-        if (!isset($query['macAddress'])) {
-            http_response_code(400);
+        // Se q contiene solo macAddress, rispondi nel formato richiesto dal firmware ESP.
+        if (isset($query['macAddress']) && count($query) === 1) {
+            $config = buildFirmwareConfigByMac($conn, $baseUrl, $query['macAddress']);
+            $payload = $config ? [$config] : [];
+
             header('Content-Type: application/json');
-            echo json_encode(["errore" => "Nel filtro q manca macAddress"]);
+            echo json_encode($payload, JSON_PRETTY_PRINT);
             $conn->close();
             exit;
         }
-
-        $config = buildFirmwareConfigByMac($conn, $baseUrl, $query['macAddress']);
-        $payload = $config ? [$config] : [];
-
-        header('Content-Type: application/json');
-        echo json_encode($payload, JSON_PRETTY_PRINT);
-        $conn->close();
-        exit;
     }
 
     // GET singola configurazione per ID
@@ -200,13 +195,34 @@ if ($method === 'GET') {
     }
     // GET lista configurazioni
     else {
-        $configurazioni = [];
-        $sql = "SELECT c.*, a.arn_nome, a.arn_MacAddress
-                FROM ConfigurazioneScheda c
-                LEFT JOIN Arnia a ON a.arn_id = c.cfs_arn_id";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'configurazioni');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($result && ($row = $result->fetch_assoc())) {
+        $configurazioni = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
+            $arnia = null;
+            if (isset($row['cfs_arn_id'])) {
+                $arnId = (int)$row['cfs_arn_id'];
+                $resArn = $conn->query("SELECT arn_nome, arn_MacAddress FROM Arnia WHERE arn_id = $arnId");
+                if ($resArn && $resArn->num_rows > 0) {
+                    $arn = $resArn->fetch_assoc();
+                    $arnia = [
+                        "arn_nome" => $arn['arn_nome'],
+                        "arn_MacAddress" => $arn['arn_MacAddress'],
+                        "isPartial" => true,
+                        "link" => "$baseUrl/arnie/$arnId"
+                    ];
+                }
+            }
+
             $configurazioni[] = [
                 "cfs_id" => (int)$row['cfs_id'],
                 "cfs_arn_id" => (int)$row['cfs_arn_id'],
@@ -217,18 +233,12 @@ if ($method === 'GET') {
                 "wdt_timeout_sec" => (int)$row['wdt_timeout_sec'],
                 "wifi_check_ms" => (int)$row['wifi_check_ms'],
                 "ota_abilitato" => (bool)$row['ota_abilitato'],
-                "arnia" => [
-                    "arn_nome" => $row['arn_nome'],
-                    "arn_MacAddress" => $row['arn_MacAddress'],
-                    "isPartial" => true,
-                    "link" => "$baseUrl/arnie/{$row['cfs_arn_id']}"
-                ],
+                "arnia" => $arnia,
                 "link" => "$baseUrl/configurazioni/{$row['cfs_id']}"
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($configurazioni, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($configurazioni, $queryMeta);
     }
 }
 

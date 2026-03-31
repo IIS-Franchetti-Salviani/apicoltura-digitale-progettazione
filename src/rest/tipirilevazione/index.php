@@ -102,11 +102,19 @@ if ($method === 'GET') {
     }
     // GET tutti i tipi
     else {
-        $tipi = [];
-        $sql = "SELECT * FROM TipoRilevazione";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'tipirilevazione');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($result && ($row = $result->fetch_assoc())) {
+        $tipi = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             $sensore = null;
             $resSen = $conn->query("SELECT * FROM Sensore WHERE sen_id = {$row["tip_sen_id"]}");
             if ($resSen && $resSen->num_rows > 0) {
@@ -137,8 +145,7 @@ if ($method === 'GET') {
             $tipi[] = $item;
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($tipi, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($tipi, $queryMeta);
     }
 }
 
@@ -288,4 +295,3 @@ elseif ($method === 'DELETE') {
 }
 
 $conn->close();
-

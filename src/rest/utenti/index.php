@@ -40,11 +40,19 @@ if ($method === 'GET') {
     }
     // GET tutti gli utenti
     else {
-        $utenti = [];
-        $sql = "SELECT ute_id, ute_username, ute_admin FROM Utente";
-        $result = $conn->query($sql);
+        $queryMeta = restGetCollectionQuery($conn, 'utenti');
+        if (!$queryMeta['ok']) {
+            http_response_code($queryMeta['status']);
+            header('Content-Type: application/json');
+            echo json_encode(["errore" => $queryMeta['errore']]);
+            $conn->close();
+            exit;
+        }
 
-        while ($row = $result->fetch_assoc()) {
+        $utenti = [];
+        $rows = $queryMeta['rows'];
+
+        foreach ($rows as $row) {
             $utenti[] = [
                 "ute_id" => (int)$row["ute_id"],
                 "ute_username" => $row["ute_username"],
@@ -53,8 +61,7 @@ if ($method === 'GET') {
             ];
         }
 
-        header('Content-Type: application/json');
-        echo json_encode($utenti, JSON_PRETTY_PRINT);
+        restSendCollectionResponse($utenti, $queryMeta);
     }
 }
 

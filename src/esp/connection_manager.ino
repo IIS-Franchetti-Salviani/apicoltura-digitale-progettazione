@@ -275,10 +275,11 @@ bool save_sensor_data(SensorData* data) {
   StaticJsonDocument<256> doc;
   doc["ril_dato"] = data->valore;
   doc["ril_dataOra"] = isoTimestamp;
+  doc["ril_sea_id"] = data->idSensore;
 
   // ril_sea_id è un array con l'ID del sensore
-  JsonArray seaIdArray = doc.createNestedArray("ril_sea_id");
-  seaIdArray.add(data->idSensore);
+  //JsonArray seaIdArray = doc.createNestedArray("ril_sea_id");
+  //seaIdArray.add(data->idSensore);
 
   String jsonPayload;
   serializeJson(doc, jsonPayload);

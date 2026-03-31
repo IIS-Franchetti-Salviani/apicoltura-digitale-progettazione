@@ -1,0 +1,6 @@
+RewriteEngine On
+
+# Reindirizza tutte le richieste REST ad apimanager.php
+# (anche se il file fisico esiste) per avere logging e gestione CORS centralizzati.
+RewriteCond %{REQUEST_URI} !/apimanager\.php$
+RewriteRule ^.*$ apimanager.php [QSA,L]

@@ -345,7 +345,7 @@ String formatValueForDashboard(float value, uint8_t decimals) {
   if (isnan(value) || isinf(value)) {
     return "N/A";
   }
-  return String(value, decimals);
+  return String((double)value, (unsigned int)decimals);
 }
 
 String formatTsForDashboard(unsigned long ts) {

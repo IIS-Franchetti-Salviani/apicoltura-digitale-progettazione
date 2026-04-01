@@ -12,6 +12,8 @@
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <ArduinoOTA.h>
+#include <WebServer.h>
+#include <Update.h>
 #include <esp_mac.h>
 #include <time.h>
 #include <math.h>
@@ -31,11 +33,14 @@ const int NUM_NETWORKS = 3;
 const char* REST_URL = "https://www.flip-flop.it/apicoltura-digitale/rest/";
 const char* REST_KEY = "ijy31qysljvd99d1pdelbyfemsje29nz";
 const int REST_TIMEOUT = 10000;
+const char* OTA_AUTH_PASSWORD = "!hJp^%RmYj7fQNmUjcd%";
+const char* WEB_FW_UPLOAD_USER = "admin";
 
 // Configurazione watchdog
 #define WDT_TIMEOUT_SEC 30
 
 WiFiMulti wifiMulti;
+WebServer deviceWebServer(80);
 
 // ============================================================================
 // VARIABILI DEVICE
@@ -110,6 +115,25 @@ unsigned long ultimoCheckWiFi = 0;
 // ============================================================================
 bool wifiConnesso = false;
 bool configCaricata = false;
+
+// ========================================================================
+// DASHBOARD WEB - STATO ULTIME LETTURE
+// ========================================================================
+struct SensorRuntimeSnapshot {
+  bool disponibile;
+  bool valido;
+  bool inviatoServer;
+  bool abilitato;
+  float valore;
+  int codiceStato;
+  unsigned long unixTs;
+  char nota[96];
+};
+
+SensorRuntimeSnapshot snapshotDs18b20 = {false, false, false, false, NAN, 0, 0, "Nessuna lettura"};
+SensorRuntimeSnapshot snapshotSht21Hum = {false, false, false, false, NAN, 0, 0, "Nessuna lettura"};
+SensorRuntimeSnapshot snapshotSht21Temp = {false, false, false, false, NAN, 0, 0, "Nessuna lettura"};
+SensorRuntimeSnapshot snapshotHx711 = {false, false, false, false, NAN, 0, 0, "Nessuna lettura"};
 
 // ========================================================================
 // GESTIONE EPOCH / NTP
@@ -278,6 +302,263 @@ bool isSensorAbilitatoByTipo(const char* tipoSensore) {
     return configSensori.hx711.abilitato;
   }
   return false;
+}
+
+SensorRuntimeSnapshot* getSnapshotByTipo(const char* tipoSensore) {
+  if (strcmp(tipoSensore, "ds18b20") == 0) {
+    return &snapshotDs18b20;
+  }
+  if (strcmp(tipoSensore, "sht21_humidity") == 0) {
+    return &snapshotSht21Hum;
+  }
+  if (strcmp(tipoSensore, "sht21_temperature") == 0) {
+    return &snapshotSht21Temp;
+  }
+  if (strcmp(tipoSensore, "hx711") == 0) {
+    return &snapshotHx711;
+  }
+  return nullptr;
+}
+
+void aggiornaSnapshotSensore(const char* tipoSensore, const RisultatoValidazione* risultato,
+                             bool inviatoServer, const char* nota) {
+  SensorRuntimeSnapshot* snapshot = getSnapshotByTipo(tipoSensore);
+  if (snapshot == nullptr || risultato == nullptr) {
+    return;
+  }
+
+  snapshot->disponibile = true;
+  snapshot->valido = risultato->valido;
+  snapshot->inviatoServer = inviatoServer;
+  snapshot->abilitato = isSensorAbilitatoByTipo(tipoSensore);
+  snapshot->valore = risultato->valorePulito;
+  snapshot->codiceStato = risultato->codiceErrore;
+  snapshot->unixTs = getUnixTimestamp();
+
+  if (nota == nullptr) {
+    nota = "";
+  }
+  snprintf(snapshot->nota, sizeof(snapshot->nota), "%s", nota);
+}
+
+String formatValueForDashboard(float value, uint8_t decimals) {
+  if (isnan(value) || isinf(value)) {
+    return "N/A";
+  }
+  return String(value, decimals);
+}
+
+String formatTsForDashboard(unsigned long ts) {
+  if (ts == 0) {
+    return "N/A";
+  }
+
+  time_t raw = (time_t)ts;
+  struct tm* tmUtc = gmtime(&raw);
+  if (tmUtc == nullptr) {
+    return "N/A";
+  }
+
+  char buffer[32];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S UTC", tmUtc);
+  return String(buffer);
+}
+
+String escapeHtml(const String& input) {
+  String out = input;
+  out.replace("&", "&amp;");
+  out.replace("<", "&lt;");
+  out.replace(">", "&gt;");
+  out.replace("\"", "&quot;");
+  out.replace("'", "&#39;");
+  return out;
+}
+
+String buildSensorCard(const char* titolo, const char* unita, const SensorRuntimeSnapshot& snapshot) {
+  String stato = "MAI LETTO";
+  if (!snapshot.abilitato) {
+    stato = "DISABILITATO";
+  } else if (!snapshot.disponibile) {
+    stato = "IN ATTESA";
+  } else if (!snapshot.valido) {
+    stato = "ERRORE LETTURA";
+  } else if (!snapshot.inviatoServer) {
+    stato = "NON INVIATO";
+  } else {
+    stato = "OK";
+  }
+
+  String html;
+  html.reserve(650);
+  html += "<article class='card'>";
+  html += "<h2>";
+  html += titolo;
+  html += "</h2>";
+  html += "<div class='value'>";
+  html += formatValueForDashboard(snapshot.valore, 2);
+  html += " <span>";
+  html += unita;
+  html += "</span></div>";
+  html += "<p><strong>Stato:</strong> ";
+  html += stato;
+  html += "</p>";
+  html += "<p><strong>Codice:</strong> ";
+  html += String(snapshot.codiceStato);
+  html += "</p>";
+  html += "<p><strong>Ts:</strong> ";
+  html += formatTsForDashboard(snapshot.unixTs);
+  html += "</p>";
+  html += "<p><strong>Nota:</strong> ";
+  html += escapeHtml(String(snapshot.nota));
+  html += "</p>";
+  html += "</article>";
+  return html;
+}
+
+bool isFirmwareRequestAuthenticated() {
+  return deviceWebServer.authenticate(WEB_FW_UPLOAD_USER, OTA_AUTH_PASSWORD);
+}
+
+bool ensureFirmwareAuth() {
+  if (isFirmwareRequestAuthenticated()) {
+    return true;
+  }
+  deviceWebServer.requestAuthentication(BASIC_AUTH, "ESP32 Firmware", "Credenziali richieste");
+  return false;
+}
+
+void handleDashboardHome() {
+  String wifiState = isWiFiConnected() ? "Connesso" : "Disconnesso";
+  String ip = isWiFiConnected() ? WiFi.localIP().toString() : "N/A";
+
+  String html;
+  html.reserve(5200);
+  html += "<!doctype html><html lang='it'><head>";
+  html += "<meta charset='utf-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<title>Arnia ESP32 Dashboard</title>";
+  html += "<style>";
+  html += "html,body{margin:0;padding:0;background:#f4f7fb;color:#111;font-family:Arial,sans-serif;}";
+  html += "body{min-height:100vh;background:linear-gradient(120deg,#eef5ff,#dce9ff);}main{padding:14px 18px;}";
+  html += ".top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}";
+  html += "h1{margin:0;font-size:1.3rem;}a.btn{display:inline-block;background:#0b57d0;color:#fff;padding:10px 14px;border-radius:9px;text-decoration:none;font-weight:600;}";
+  html += ".meta{margin:8px 0 14px 0;padding:10px;background:#fff;border-radius:10px;border:1px solid #d2def0;font-size:0.92rem;}";
+  html += ".grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:10px;}";
+  html += ".card{background:#fff;border:1px solid #ced8e8;border-radius:12px;padding:11px;box-shadow:0 1px 2px rgba(0,0,0,0.05);}";
+  html += ".card h2{margin:0 0 8px 0;font-size:1rem;}.value{font-size:1.55rem;font-weight:700;}";
+  html += ".value span{font-size:0.92rem;font-weight:500;color:#334155;}.card p{margin:4px 0;font-size:0.83rem;}";
+  html += ".hint{margin-top:10px;font-size:0.79rem;color:#334155;}";
+  html += "@media (max-width:1200px){.grid{grid-template-columns:repeat(2,minmax(220px,1fr));}}";
+  html += "@media (max-width:640px){.grid{grid-template-columns:1fr;}}";
+  html += "</style></head><body><main>";
+  html += "<div class='top'><h1>Dashboard Arnia ESP32 (Landscape)</h1><a class='btn' href='/fw'>Upload firmware</a></div>";
+  html += "<div class='meta'><strong>MAC:</strong> ";
+  html += String(deviceMacAddress);
+  html += " | <strong>Wi-Fi:</strong> ";
+  html += wifiState;
+  html += " | <strong>IP:</strong> ";
+  html += ip;
+  html += " | <strong>Uptime:</strong> ";
+  html += String(millis() / 1000UL);
+  html += "s</div>";
+  html += "<section class='grid'>";
+  html += buildSensorCard("DS18B20 Temperatura Interna", "C", snapshotDs18b20);
+  html += buildSensorCard("SHT21 Umidita", "%", snapshotSht21Hum);
+  html += buildSensorCard("SHT21 Temperatura Ambiente", "C", snapshotSht21Temp);
+  html += buildSensorCard("HX711 Peso", "kg", snapshotHx711);
+  html += "</section>";
+  html += "<div class='hint'>Aggiornamento pagina automatico ogni 10 secondi.</div>";
+  html += "<script>setTimeout(function(){location.reload();},10000);</script>";
+  html += "</main></body></html>";
+
+  deviceWebServer.send(200, "text/html; charset=utf-8", html);
+}
+
+void handleFirmwarePage() {
+  if (!ensureFirmwareAuth()) {
+    return;
+  }
+
+  String html;
+  html.reserve(2200);
+  html += "<!doctype html><html lang='it'><head>";
+  html += "<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<title>Firmware Upload ESP32</title>";
+  html += "<style>";
+  html += "body{margin:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#111;}";
+  html += "main{max-width:760px;margin:24px auto;padding:16px;}";
+  html += ".card{background:#fff;padding:16px;border:1px solid #d2deef;border-radius:12px;}";
+  html += "h1{margin-top:0;}input[type=file]{width:100%;padding:8px;border:1px solid #c7d3e6;border-radius:8px;}";
+  html += "button{margin-top:12px;background:#0b57d0;color:#fff;border:0;border-radius:8px;padding:10px 15px;font-weight:600;cursor:pointer;}";
+  html += "a{display:inline-block;margin-top:14px;color:#0b57d0;text-decoration:none;}";
+  html += "</style></head><body><main><section class='card'>";
+  html += "<h1>Aggiornamento Firmware</h1>";
+  html += "<p>Seleziona un file <code>.bin</code> compilato per questa board ESP32-CAM.</p>";
+  html += "<form method='POST' action='/fw/upload' enctype='multipart/form-data'>";
+  html += "<input type='file' name='firmware' accept='.bin' required>";
+  html += "<button type='submit'>Carica firmware</button>";
+  html += "</form>";
+  html += "<a href='/'>Torna alla dashboard</a>";
+  html += "</section></main></body></html>";
+
+  deviceWebServer.send(200, "text/html; charset=utf-8", html);
+}
+
+void handleFirmwareUploadStream() {
+  if (!isFirmwareRequestAuthenticated()) {
+    return;
+  }
+
+  HTTPUpload& upload = deviceWebServer.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.printf("FW upload start: %s\n", upload.filename.c_str());
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) {
+      Serial.printf("FW upload completato: %u bytes\n", upload.totalSize);
+    } else {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    Update.end();
+    Serial.println("FW upload annullato");
+  }
+}
+
+void handleFirmwareUploadResult() {
+  if (!ensureFirmwareAuth()) {
+    return;
+  }
+
+  if (Update.hasError()) {
+    deviceWebServer.send(500, "text/plain; charset=utf-8", "Upload firmware fallito");
+    return;
+  }
+
+  deviceWebServer.send(200, "text/html; charset=utf-8",
+    "<html><body><h1>Firmware aggiornato</h1><p>Riavvio in corso...</p></body></html>");
+  delay(700);
+  ESP.restart();
+}
+
+void initDeviceWebServer() {
+  deviceWebServer.on("/", HTTP_GET, handleDashboardHome);
+  deviceWebServer.on("/fw", HTTP_GET, handleFirmwarePage);
+  deviceWebServer.on("/fw/upload", HTTP_POST, handleFirmwareUploadResult, handleFirmwareUploadStream);
+  deviceWebServer.onNotFound([]() {
+    deviceWebServer.send(404, "application/json; charset=utf-8", "{\"error\":\"Not found\"}");
+  });
+  deviceWebServer.begin();
+  Serial.println("  + Web dashboard locale attiva su porta 80");
+  Serial.println("    URL: http://<ip-esp>/");
+  Serial.println("    FW user: admin (password uguale a OTA)");
 }
 
 void inviaStatoSensoreRuntime(const char* tipoSensore, const char* evento,
@@ -502,6 +783,11 @@ void caricaConfigDaServer() {
     inviaStatoSensoreRuntime("hx711", "CONFIG_SYNC", "", "", 9000, NAN);
   }
 
+  snapshotDs18b20.abilitato = configSensori.ds18b20.abilitato;
+  snapshotSht21Hum.abilitato = configSensori.sht21_humidity.abilitato;
+  snapshotSht21Temp.abilitato = configSensori.sht21_temperature.abilitato;
+  snapshotHx711.abilitato = configSensori.hx711.abilitato;
+
   Serial.println("\n--- CONFIGURAZIONE APPLICATA ---\n");
 }
 
@@ -510,11 +796,12 @@ void caricaConfigDaServer() {
 // ============================================================================
 // tipoSensore: "ds18b20", "sht21_humidity", "sht21_temperature", "hx711"
 // ============================================================================
-void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) {
+bool inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) {
 
   if (!isWiFiConnected()) {
     Serial.println("  ! Wi-Fi non connesso, dato non inviato");
-    return;
+    aggiornaSnapshotSensore(tipoSensore, risultato, false, "Wi-Fi disconnesso");
+    return false;
   }
 
   // Ottieni il sensorId dalla configurazione in base al tipo.
@@ -531,7 +818,8 @@ void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) 
       risultato->codiceErrore,
       risultato->valorePulito
     );
-    return;
+    aggiornaSnapshotSensore(tipoSensore, risultato, false, "sea_id non valido");
+    return false;
   }
 
   unsigned long timestamp = getUnixTimestamp();
@@ -555,7 +843,12 @@ void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) 
       risultato->codiceErrore,
       risultato->valorePulito
     );
+    aggiornaSnapshotSensore(tipoSensore, risultato, false, "POST /rilevazioni fallito");
+    return false;
   }
+
+  aggiornaSnapshotSensore(tipoSensore, risultato, true, "Dato inviato al server");
+  return true;
 }
 
 // ============================================================================
@@ -616,7 +909,7 @@ void setup() {
 
   // Password can be set with plain text (will be hashed internally)
   // The authentication uses PBKDF2-HMAC-SHA256 with 10,000 iterations
-  ArduinoOTA.setPassword("!hJp^%RmYj7fQNmUjcd%");
+  ArduinoOTA.setPassword(OTA_AUTH_PASSWORD);
   ArduinoOTA
   .onStart([]() {
     String type;
@@ -656,6 +949,8 @@ void setup() {
   ArduinoOTA.begin();
   Serial.println("  + OTA pronto\n");
 
+  initDeviceWebServer();
+
   // FASE 2: Inizializzazione Data Manager
   Serial.println("FASE 2: INIZIALIZZAZIONE DATA MANAGER\n");
   ServerConfig serverConfig;
@@ -694,6 +989,7 @@ void setup() {
 // ============================================================================
 void loop() {
   ArduinoOTA.handle();
+  deviceWebServer.handleClient();
 
   esp_task_wdt_reset();
 
@@ -717,6 +1013,7 @@ void loop() {
         risultato.codiceErrore,
         risultato.valorePulito
       );
+      aggiornaSnapshotSensore("ds18b20", &risultato, false, "Lettura non valida");
     }
     Serial.println("---\n");
   }
@@ -739,6 +1036,7 @@ void loop() {
         risultato.codiceErrore,
         risultato.valorePulito
       );
+      aggiornaSnapshotSensore("sht21_humidity", &risultato, false, "Lettura non valida");
     }
     Serial.println("---\n");
   }
@@ -761,6 +1059,7 @@ void loop() {
         risultato.codiceErrore,
         risultato.valorePulito
       );
+      aggiornaSnapshotSensore("sht21_temperature", &risultato, false, "Lettura non valida");
     }
     Serial.println("---\n");
   }
@@ -783,6 +1082,7 @@ void loop() {
         risultato.codiceErrore,
         risultato.valorePulito
       );
+      aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura non valida");
     }
     Serial.println("---\n");
   }

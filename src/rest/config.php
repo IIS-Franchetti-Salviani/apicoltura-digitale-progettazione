@@ -14,7 +14,7 @@ $apiKeyValidationEnabled = true;
 
 // 2) Lista chiavi valide (usane almeno una robusta in produzione)
 $allowedApiKeys = [
-    'M7QYVwcR8Njwt2JgfprFw3rgkdLdYuYg'
+    'ijy31qysljvd99d1pdelbyfemsje29nz'
 ];
 
 // 3) Nome header da validare
@@ -23,6 +23,10 @@ $apiKeyHeaderName = 'x-apikey';
 // 4) Fallback opzionale da query string (consigliato false)
 $apiKeyAllowQueryParam = false;
 $apiKeyQueryParamName = 'x-apikey';
+$apiKeyBypassPaths = [
+    '/_ping',
+    '/_ping/'
+];
 
 if (!function_exists('restGetHeaderValue')) {
     function restGetHeaderValue($headerName) {
@@ -69,10 +73,19 @@ if (!function_exists('restIsApiKeyAllowed')) {
 
 if (!function_exists('restEnforceApiKey')) {
     function restEnforceApiKey() {
-        global $apiKeyValidationEnabled, $allowedApiKeys, $apiKeyHeaderName, $apiKeyAllowQueryParam, $apiKeyQueryParamName;
+        global $apiKeyValidationEnabled, $allowedApiKeys, $apiKeyHeaderName, $apiKeyAllowQueryParam, $apiKeyQueryParamName, $apiKeyBypassPaths;
 
         if (!$apiKeyValidationEnabled) {
             return true;
+        }
+
+        $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+        if (is_string($requestPath) && $requestPath !== '' && is_array($apiKeyBypassPaths)) {
+            foreach ($apiKeyBypassPaths as $bypass) {
+                if (substr($requestPath, -strlen($bypass)) === $bypass) {
+                    return true;
+                }
+            }
         }
 
         $providedKey = restGetHeaderValue($apiKeyHeaderName);
@@ -110,6 +123,11 @@ $dbPort = 3306;
 $dbUser = 'Sql1287228';
 $dbPassword = '0w23o56486';
 $dbName = 'Sql1287228_4';
+
+// Evita eccezioni fatali mysqli e gestisci gli errori con i check gia' presenti nel codice.
+if (function_exists('mysqli_report')) {
+    mysqli_report(MYSQLI_REPORT_OFF);
+}
 
 // Connessione al database
 $conn = new mysqli($dbHost, $dbUser, $dbPassword, $dbName, $dbPort);
@@ -242,6 +260,30 @@ $restResourceExposure = [
         'default_dir' => -1,
         'default_max' => 100,
         'max_limit' => 1000
+    ],
+    'statosensori' => [
+        'table' => 'StatoInvioSensore',
+        'pk' => 'sts_id',
+        'fields' => [
+            'sts_id',
+            'sts_macAddress',
+            'sts_tipoSensore',
+            'sts_sensorId',
+            'sts_abilitato',
+            'sts_evento',
+            'sts_causaCodice',
+            'sts_causaDettaglio',
+            'sts_codiceStato',
+            'sts_valore',
+            'sts_timestamp',
+            'sts_creato_at'
+        ],
+        'required_fields' => ['sts_id', 'sts_macAddress', 'sts_tipoSensore'],
+        'search_fields' => ['sts_macAddress', 'sts_tipoSensore', 'sts_evento', 'sts_causaCodice', 'sts_causaDettaglio'],
+        'default_sort' => 'sts_timestamp',
+        'default_dir' => -1,
+        'default_max' => 200,
+        'max_limit' => 2000
     ],
     'notifiche' => [
         'table' => 'Notifica',

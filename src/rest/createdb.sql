@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS ComandoDispositivo;
 DROP TABLE IF EXISTS StoricoConfigurazioneSensore;
 DROP TABLE IF EXISTS LogAccesso;
 DROP TABLE IF EXISTS HeartbeatDispositivo;
+DROP TABLE IF EXISTS StatoInvioSensore;
 DROP TABLE IF EXISTS ConfigurazioneScheda;
 DROP TABLE IF EXISTS Notifica;
 DROP TABLE IF EXISTS Rilevazione;
@@ -164,6 +165,36 @@ CREATE TABLE Rilevazione (
         REFERENCES SensoreArnia(sea_id)
         ON UPDATE CASCADE
         ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================================================
+-- STATO INVIO SENSORE
+-- Traccia stato di abilitazione e cause impedimento invio dal firmware.
+-- ============================================================================
+CREATE TABLE StatoInvioSensore (
+    sts_id BIGINT NOT NULL AUTO_INCREMENT,
+    sts_macAddress VARCHAR(17) NOT NULL,
+    sts_tipoSensore VARCHAR(32) NOT NULL,
+    sts_sensorId VARCHAR(32) DEFAULT NULL,
+    sts_abilitato BOOLEAN NOT NULL DEFAULT TRUE,
+    sts_evento ENUM(
+        'CONFIG_SYNC',
+        'INVIO_OK',
+        'INVIO_BLOCCATO',
+        'LETTURA_NON_VALIDA',
+        'WIFI_OFFLINE',
+        'ERRORE_SERVER'
+    ) NOT NULL DEFAULT 'CONFIG_SYNC',
+    sts_causaCodice VARCHAR(64) DEFAULT NULL,
+    sts_causaDettaglio VARCHAR(255) DEFAULT NULL,
+    sts_codiceStato INT DEFAULT NULL,
+    sts_valore DOUBLE DEFAULT NULL,
+    sts_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sts_creato_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (sts_id),
+    KEY idx_sts_mac_ts (sts_macAddress, sts_timestamp),
+    KEY idx_sts_tipo_ts (sts_tipoSensore, sts_timestamp),
+    KEY idx_sts_evento_ts (sts_evento, sts_timestamp)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ============================================================================
@@ -440,6 +471,16 @@ SELECT sa.sea_id, 41.3, '2026-03-31 10:00:00', 9000
 FROM SensoreArnia sa
 JOIN TipoRilevazione t ON t.tip_id = sa.sea_tip_id
 WHERE sa.sea_arn_id = 1 AND t.tip_codice = 'hx711';
+
+-- Stato invio sensori esempio (sync configurazione)
+INSERT INTO StatoInvioSensore (
+    sts_macAddress, sts_tipoSensore, sts_sensorId, sts_abilitato, sts_evento,
+    sts_causaCodice, sts_causaDettaglio, sts_codiceStato, sts_valore, sts_timestamp
+) VALUES
+('FB:3F:18:47:FC:3F', 'ds18b20', '1', TRUE, 'CONFIG_SYNC', NULL, NULL, 9000, NULL, '2026-03-31 09:55:00'),
+('FB:3F:18:47:FC:3F', 'sht21_humidity', '2', TRUE, 'CONFIG_SYNC', NULL, NULL, 9000, NULL, '2026-03-31 09:55:00'),
+('FB:3F:18:47:FC:3F', 'sht21_temperature', '3', TRUE, 'CONFIG_SYNC', NULL, NULL, 9000, NULL, '2026-03-31 09:55:00'),
+('FB:3F:18:47:FC:3F', 'hx711', '4', TRUE, 'CONFIG_SYNC', NULL, NULL, 9000, NULL, '2026-03-31 09:55:00');
 
 -- Notifica legacy collegata a rilevazione
 INSERT INTO Notifica (not_ril_id, not_titolo, not_dex, not_livello, not_livelloStr, not_letto)

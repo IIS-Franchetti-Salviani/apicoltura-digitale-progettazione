@@ -129,13 +129,23 @@ register_shutdown_function(function () use (
 });
 
 // CORS headers per consentire richieste dal front-end
+$defaultCorsHeaders = 'Content-Type, Authorization, x-apikey, X-Requested-With, Accept, Cache-Control, Pragma, Expires';
+$requestedCorsHeaders = $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '';
+
+if ($requestedCorsHeaders !== '') {
+    // Sanitizza i nomi header richiesti prima di rimandarli al client.
+    $requestedCorsHeaders = preg_replace('/[^A-Za-z0-9\\-_\\,\\s]/', '', $requestedCorsHeaders);
+}
+
 header("Access-Control-Allow-Origin: *");
+header("Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, x-apikey, X-Requested-With, Accept");
+header("Access-Control-Allow-Headers: " . ($requestedCorsHeaders !== '' ? $requestedCorsHeaders : $defaultCorsHeaders));
+header("Access-Control-Max-Age: 86400");
 
 // Gestione preflight CORS
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
+    http_response_code(204);
     exit;
 }
 
@@ -178,6 +188,7 @@ if (empty($segments[0])) {
             "sensoriarnia" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/sensoriarnia/",
             "configurazioni" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/configurazioni/",
             "rilevazioni" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/rilevazioni/",
+            "statosensori" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/statosensori/",
             "notifiche" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/notifiche/",
             "utenti" => "http://" . $_SERVER['HTTP_HOST'] . dirname($scriptName) . "/utenti/"
         ]
@@ -215,6 +226,9 @@ if (isset($segments[1]) && $segments[1] !== '') {
             break;
         case 'rilevazioni':
             $parametri['rilevazioneId'] = $segments[1];
+            break;
+        case 'statosensori':
+            $parametri['statoSensoreId'] = $segments[1];
             break;
         case 'notifiche':
             $parametri['notificaId'] = $segments[1];

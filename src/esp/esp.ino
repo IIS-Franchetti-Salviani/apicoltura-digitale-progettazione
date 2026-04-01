@@ -12,6 +12,9 @@
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <ArduinoOTA.h>
+#include <esp_mac.h>
+#include <time.h>
+#include <math.h>
 uint32_t last_ota_time = 0;
 
 // ============================================================================
@@ -19,14 +22,14 @@ uint32_t last_ota_time = 0;
 // ============================================================================
 const char* WIFI_NETWORKS[][2] = {
   {"Gruppo4Network", "Networks"},
-  {"WIFI_LABORATORIO", "password_lab"},
+  {"ASUS_RiceWLan", "pippoplutopaperinominnie"},
   {"didattica", "FdWt101099stdZ%("}
 };
 const int NUM_NETWORKS = 3;
 
 // Configurazione server REST
-const char* REST_URL = "https://pumbastilizzato-e441.restdb.io/rest/";
-const char* REST_KEY = "697c5d4953d66e48e51956eb";
+const char* REST_URL = "https://www.flip-flop.it/apicoltura-digitale/rest/";
+const char* REST_KEY = "ijy31qysljvd99d1pdelbyfemsje29nz";
 const int REST_TIMEOUT = 10000;
 
 // Configurazione watchdog
@@ -50,6 +53,13 @@ extern bool is_data_manager_ready();
 extern ConfigData fetch_sensor_config(const char* macAddress);
 extern bool save_sensor_data(SensorData* data);
 extern bool save_value(const char* sensorId, float valore, unsigned long timestamp);
+extern bool save_value_with_context(const char* sensorId, const char* macAddress, const char* tipoSensore,
+                                    float valore, unsigned long timestamp, int codiceStato);
+extern bool send_sensor_runtime_status(const char* macAddress, const char* tipoSensore,
+                                       const char* sensorId, bool abilitato,
+                                       const char* evento, const char* causaCodice,
+                                       const char* causaDettaglio, int codiceStato,
+                                       float valore, unsigned long timestamp);
 extern bool send_notification(NotificationData* notification);
 extern bool notify(const char* macAddress, const char* tipoSensore,
                    float valoreRiferimento, unsigned long timestamp,
@@ -101,6 +111,15 @@ unsigned long ultimoCheckWiFi = 0;
 bool wifiConnesso = false;
 bool configCaricata = false;
 
+// ========================================================================
+// GESTIONE EPOCH / NTP
+// ========================================================================
+const unsigned long MIN_VALID_UNIX_TS = 1704067200UL; // 2024-01-01T00:00:00Z
+const unsigned long NTP_RESYNC_INTERVAL_MS = 6UL * 60UL * 60UL * 1000UL; // 6h
+unsigned long lastKnownUnixEpoch = 0;
+unsigned long lastKnownUnixMillis = 0;
+unsigned long lastNtpSyncAttemptMs = 0;
+
 // ============================================================================
 // GESTIONE RISULTATI VALIDAZIONE
 // ============================================================================
@@ -149,30 +168,210 @@ bool intervalloTrascorso(unsigned long &ultimoCheck, unsigned long intervallo) {
   return false;
 }
 
+bool isEpochValido(time_t ts) {
+  return ts >= (time_t)MIN_VALID_UNIX_TS;
+}
+
+void aggiornaEpochCache(unsigned long epoch) {
+  lastKnownUnixEpoch = epoch;
+  lastKnownUnixMillis = millis();
+}
+
+bool sincronizzaTempoNtp(bool force = false) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  unsigned long adessoMs = millis();
+  if (!force && (adessoMs - lastNtpSyncAttemptMs) < NTP_RESYNC_INTERVAL_MS) {
+    return false;
+  }
+  lastNtpSyncAttemptMs = adessoMs;
+
+  configTime(0, 0, "pool.ntp.org", "time.cloudflare.com", "time.google.com");
+
+  const int maxTentativi = 20;
+  for (int i = 0; i < maxTentativi; i++) {
+    time_t now = time(nullptr);
+    if (isEpochValido(now)) {
+      aggiornaEpochCache((unsigned long)now);
+      Serial.print("  + NTP sincronizzato: ");
+      Serial.println((unsigned long)now);
+      return true;
+    }
+    delay(250);
+    esp_task_wdt_reset();
+  }
+
+  Serial.println("  ! NTP non sincronizzato (timeout)");
+  return false;
+}
+
+bool isValidSeaId(const char* sensorId) {
+  if (sensorId == nullptr || sensorId[0] == '\0') {
+    return false;
+  }
+
+  for (size_t i = 0; sensorId[i] != '\0'; i++) {
+    if (!isDigit(sensorId[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ============================================================================
 // OTTIENI TIMESTAMP UNIX
 // ============================================================================
 unsigned long getUnixTimestamp() {
   time_t now = time(nullptr);
-  if (now < 1000000000) {
-    return millis() / 1000;
+  if (isEpochValido(now)) {
+    aggiornaEpochCache((unsigned long)now);
+    return (unsigned long)now;
   }
-  return (unsigned long)now;
+
+  // Prova una sincronizzazione NTP al bisogno.
+  sincronizzaTempoNtp(false);
+  now = time(nullptr);
+  if (isEpochValido(now)) {
+    aggiornaEpochCache((unsigned long)now);
+    return (unsigned long)now;
+  }
+
+  // Fallback su cache locale, se disponibile.
+  if (lastKnownUnixEpoch > 0) {
+    unsigned long elapsedSec = (millis() - lastKnownUnixMillis) / 1000UL;
+    return lastKnownUnixEpoch + elapsedSec;
+  }
+
+  // Nessuna base temporale affidabile disponibile.
+  return 0;
+}
+
+const char* getSensorIdByTipo(const char* tipoSensore) {
+  if (strcmp(tipoSensore, "ds18b20") == 0) {
+    return configSensori.ds18b20.sensorId;
+  }
+  if (strcmp(tipoSensore, "sht21_humidity") == 0) {
+    return configSensori.sht21_humidity.sensorId;
+  }
+  if (strcmp(tipoSensore, "sht21_temperature") == 0) {
+    return configSensori.sht21_temperature.sensorId;
+  }
+  if (strcmp(tipoSensore, "hx711") == 0) {
+    return configSensori.hx711.sensorId;
+  }
+  return "";
+}
+
+bool isSensorAbilitatoByTipo(const char* tipoSensore) {
+  if (strcmp(tipoSensore, "ds18b20") == 0) {
+    return configSensori.ds18b20.abilitato;
+  }
+  if (strcmp(tipoSensore, "sht21_humidity") == 0) {
+    return configSensori.sht21_humidity.abilitato;
+  }
+  if (strcmp(tipoSensore, "sht21_temperature") == 0) {
+    return configSensori.sht21_temperature.abilitato;
+  }
+  if (strcmp(tipoSensore, "hx711") == 0) {
+    return configSensori.hx711.abilitato;
+  }
+  return false;
+}
+
+void inviaStatoSensoreRuntime(const char* tipoSensore, const char* evento,
+                              const char* causaCodice, const char* causaDettaglio,
+                              int codiceStato, float valore) {
+  if (!isWiFiConnected()) {
+    return;
+  }
+
+  const char* sensorId = getSensorIdByTipo(tipoSensore);
+  bool abilitato = isSensorAbilitatoByTipo(tipoSensore);
+  unsigned long ts = getUnixTimestamp();
+
+  bool ok = send_sensor_runtime_status(
+    deviceMacAddress,
+    tipoSensore,
+    sensorId,
+    abilitato,
+    evento,
+    causaCodice,
+    causaDettaglio,
+    codiceStato,
+    valore,
+    ts
+  );
+
+  if (!ok) {
+    Serial.print("  ! Invio stato sensore fallito: ");
+    Serial.println(tipoSensore);
+  }
+}
+
+// ============================================================================
+// LETTURA MAC ADDRESS ROBUSTA
+// ============================================================================
+bool leggiMacAddressDispositivo(char* outMac, size_t outSize) {
+  if (outMac == nullptr || outSize < 18) {
+    return false;
+  }
+
+  uint8_t mac[6] = {0};
+  esp_err_t err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+  if (err != ESP_OK) {
+    WiFi.macAddress(mac);
+  }
+
+  bool allZero = true;
+  for (int i = 0; i < 6; i++) {
+    if (mac[i] != 0) {
+      allZero = false;
+      break;
+    }
+  }
+
+  // Fallback: alcuni stack possono restituire MAC vuoto se Wi-Fi non pronto.
+  if (allZero) {
+    uint64_t chipMac = ESP.getEfuseMac();
+    mac[0] = (chipMac >> 40) & 0xFF;
+    mac[1] = (chipMac >> 32) & 0xFF;
+    mac[2] = (chipMac >> 24) & 0xFF;
+    mac[3] = (chipMac >> 16) & 0xFF;
+    mac[4] = (chipMac >> 8) & 0xFF;
+    mac[5] = chipMac & 0xFF;
+
+    allZero = true;
+    for (int i = 0; i < 6; i++) {
+      if (mac[i] != 0) {
+        allZero = false;
+        break;
+      }
+    }
+  }
+
+  snprintf(outMac, outSize, "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  return !allZero;
 }
 
 // ============================================================================
 // GESTIONE WI-FI CON WiFiMulti
 // ============================================================================
 void initWiFi() {
-  uint8_t mac[6];
-  WiFi. macAddress(mac);
-  snprintf(deviceMacAddress, sizeof(deviceMacAddress), "%02X:%02X:%02X:%02X:%02X:%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  WiFi.mode(WIFI_STA);
+  delay(50);
+
+  bool macValido = leggiMacAddressDispositivo(deviceMacAddress, sizeof(deviceMacAddress));
 
   Serial.print("  MAC Address: ");
   Serial.println(deviceMacAddress);
-
-  WiFi.mode(WIFI_STA);
+  if (!macValido) {
+    Serial.println("  ! MAC non affidabile, verificare eFuse / inizializzazione Wi-Fi");
+  }
 
   Serial.println("\n  Reti Wi-Fi configurate:");
   for (int i = 0; i < NUM_NETWORKS; i++) {
@@ -204,6 +403,7 @@ bool connectWiFi() {
     Serial.print("    RSSI: ");
     Serial.print(WiFi.RSSI());
     Serial.println(" dBm");
+    sincronizzaTempoNtp(true);
     return true;
   } else {
     wifiConnesso = false;
@@ -234,8 +434,10 @@ void checkWiFiConnection() {
         Serial.print("  RSSI: ");
         Serial.print(WiFi.RSSI());
         Serial.println(" dBm\n");
+        sincronizzaTempoNtp(true);
       }
       wifiConnesso = true;
+      sincronizzaTempoNtp(false);
     }
   }
 }
@@ -266,6 +468,40 @@ void caricaConfigDaServer() {
   calibrate_hx711(configSensori.calibrationFactor, configSensori.calibrationOffset);
 
   configCaricata = true;
+
+  // Report stato sensori ad ogni download/applicazione configurazione.
+  if (!configSensori.ds18b20.abilitato) {
+    inviaStatoSensoreRuntime("ds18b20", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
+  } else if (!isValidSeaId(configSensori.ds18b20.sensorId)) {
+    inviaStatoSensoreRuntime("ds18b20", "CONFIG_SYNC", "SENSOR_ID_NON_VALIDO_CONFIG", "sea_id assente/non numerico", 9000, NAN);
+  } else {
+    inviaStatoSensoreRuntime("ds18b20", "CONFIG_SYNC", "", "", 9000, NAN);
+  }
+
+  if (!configSensori.sht21_humidity.abilitato) {
+    inviaStatoSensoreRuntime("sht21_humidity", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
+  } else if (!isValidSeaId(configSensori.sht21_humidity.sensorId)) {
+    inviaStatoSensoreRuntime("sht21_humidity", "CONFIG_SYNC", "SENSOR_ID_NON_VALIDO_CONFIG", "sea_id assente/non numerico", 9000, NAN);
+  } else {
+    inviaStatoSensoreRuntime("sht21_humidity", "CONFIG_SYNC", "", "", 9000, NAN);
+  }
+
+  if (!configSensori.sht21_temperature.abilitato) {
+    inviaStatoSensoreRuntime("sht21_temperature", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
+  } else if (!isValidSeaId(configSensori.sht21_temperature.sensorId)) {
+    inviaStatoSensoreRuntime("sht21_temperature", "CONFIG_SYNC", "SENSOR_ID_NON_VALIDO_CONFIG", "sea_id assente/non numerico", 9000, NAN);
+  } else {
+    inviaStatoSensoreRuntime("sht21_temperature", "CONFIG_SYNC", "", "", 9000, NAN);
+  }
+
+  if (!configSensori.hx711.abilitato) {
+    inviaStatoSensoreRuntime("hx711", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
+  } else if (!isValidSeaId(configSensori.hx711.sensorId)) {
+    inviaStatoSensoreRuntime("hx711", "CONFIG_SYNC", "SENSOR_ID_NON_VALIDO_CONFIG", "sea_id assente/non numerico", 9000, NAN);
+  } else {
+    inviaStatoSensoreRuntime("hx711", "CONFIG_SYNC", "", "", 9000, NAN);
+  }
+
   Serial.println("\n--- CONFIGURAZIONE APPLICATA ---\n");
 }
 
@@ -281,31 +517,44 @@ void inviaDatoSensore(const char* tipoSensore, RisultatoValidazione* risultato) 
     return;
   }
 
-  // Ottieni il sensorId dalla configurazione in base al tipo
-  const char* sensorId = "";
+  // Ottieni il sensorId dalla configurazione in base al tipo.
+  const char* sensorId = getSensorIdByTipo(tipoSensore);
 
-  if (strcmp(tipoSensore, "ds18b20") == 0) {
-    sensorId = configSensori.ds18b20.sensorId;
-  } else if (strcmp(tipoSensore, "sht21_humidity") == 0) {
-    sensorId = configSensori.sht21_humidity.sensorId;
-  } else if (strcmp(tipoSensore, "sht21_temperature") == 0) {
-    sensorId = configSensori.sht21_temperature.sensorId;
-  } else if (strcmp(tipoSensore, "hx711") == 0) {
-    sensorId = configSensori.hx711.sensorId;
-  }
-
-  if (strlen(sensorId) == 0) {
+  if (!isValidSeaId(sensorId)) {
     Serial.print("  ! SensorId non configurato per: ");
     Serial.println(tipoSensore);
+    inviaStatoSensoreRuntime(
+      tipoSensore,
+      "INVIO_BLOCCATO",
+      "SENSOR_ID_NON_VALIDO",
+      "Impossibile inviare: sea_id mancante/non numerico",
+      risultato->codiceErrore,
+      risultato->valorePulito
+    );
     return;
   }
 
   unsigned long timestamp = getUnixTimestamp();
 
-  bool salvato = save_value(sensorId, risultato->valorePulito, timestamp);
+  bool salvato = save_value_with_context(
+    sensorId,
+    deviceMacAddress,
+    tipoSensore,
+    risultato->valorePulito,
+    timestamp,
+    risultato->codiceErrore
+  );
 
   if (!salvato) {
     Serial.println("  ! Errore salvataggio dato");
+    inviaStatoSensoreRuntime(
+      tipoSensore,
+      "ERRORE_SERVER",
+      "POST_RILEVAZIONE_FALLITO",
+      "Errore HTTP su /rilevazioni",
+      risultato->codiceErrore,
+      risultato->valorePulito
+    );
   }
 }
 
@@ -459,6 +708,15 @@ void loop() {
     if (risultato.valido) {
       Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
       inviaDatoSensore("ds18b20", &risultato);
+    } else {
+      inviaStatoSensoreRuntime(
+        "ds18b20",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
     }
     Serial.println("---\n");
   }
@@ -472,6 +730,15 @@ void loop() {
     if (risultato.valido) {
       Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" %");
       inviaDatoSensore("sht21_humidity", &risultato);
+    } else {
+      inviaStatoSensoreRuntime(
+        "sht21_humidity",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
     }
     Serial.println("---\n");
   }
@@ -485,6 +752,15 @@ void loop() {
     if (risultato.valido) {
       Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
       inviaDatoSensore("sht21_temperature", &risultato);
+    } else {
+      inviaStatoSensoreRuntime(
+        "sht21_temperature",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
     }
     Serial.println("---\n");
   }
@@ -498,6 +774,15 @@ void loop() {
     if (risultato.valido) {
       Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" kg");
       inviaDatoSensore("hx711", &risultato);
+    } else {
+      inviaStatoSensoreRuntime(
+        "hx711",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
     }
     Serial.println("---\n");
   }

@@ -10,6 +10,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <math.h>
 #include "SensorValidation.h"
 
 // ============================================================================
@@ -23,6 +24,29 @@ static int _server_timeout = 10000;
 static const char* ENDPOINT_CONFIG = "/configurazioni";
 static const char* ENDPOINT_RILEVAZIONI = "/rilevazioni";
 static const char* ENDPOINT_NOTIFICHE = "/notifiche";
+static const char* ENDPOINT_STATO_SENSORI = "/statosensori";
+
+static void build_endpoint_url(char* out, size_t outSize, const char* endpoint) {
+  if (out == NULL || outSize == 0 || endpoint == NULL) {
+    return;
+  }
+
+  size_t baseLen = strlen(_server_base_url);
+  bool baseEndsSlash = (baseLen > 0 && _server_base_url[baseLen - 1] == '/');
+  bool endpointStartsSlash = (endpoint[0] == '/');
+
+  if (baseEndsSlash && endpointStartsSlash) {
+    snprintf(out, outSize, "%s%s", _server_base_url, endpoint + 1);
+    return;
+  }
+
+  if (!baseEndsSlash && !endpointStartsSlash) {
+    snprintf(out, outSize, "%s/%s", _server_base_url, endpoint);
+    return;
+  }
+
+  snprintf(out, outSize, "%s%s", _server_base_url, endpoint);
+}
 
 // ============================================================================
 // HELPER - Converte timestamp Unix in formato ISO 8601
@@ -131,11 +155,12 @@ ConfigData fetch_sensor_config(const char* macAddress) {
   response.success = false;
 
   // Valori default (sogliaMin, sogliaMax, intervallo, abilitato, sensorId)
-  // Gli _id di default sono placeholder - sostituire con quelli reali dal DB
-  response.ds18b20 = {30.0f, 37.0f, 360000, true, "DEFAULT_DS18B20"};
-  response.sht21_humidity = {40.0f, 70.0f, 360000, true, "DEFAULT_SHT21_HUM"};
-  response.sht21_temperature = {10.0f, 45.0f, 360000, true, "DEFAULT_SHT21_TEMP"};
-  response.hx711 = {10.0f, 80.0f, 60000, true, "DEFAULT_HX711"};
+  // SensorId vuoto se la configurazione non e' disponibile:
+  // evita POST con FK invalida su ril_sea_id.
+  response.ds18b20 = {30.0f, 37.0f, 360000, true, ""};
+  response.sht21_humidity = {40.0f, 70.0f, 360000, true, ""};
+  response.sht21_temperature = {10.0f, 45.0f, 360000, true, ""};
+  response.hx711 = {10.0f, 80.0f, 60000, true, ""};
   response.calibrationFactor = 2280.0f;
   response.calibrationOffset = 50000;
 
@@ -151,9 +176,12 @@ ConfigData fetch_sensor_config(const char* macAddress) {
   HTTPClient http;
 
   // Costruisci URL con filtro MAC address
-  char url[256];
-  snprintf(url, sizeof(url), "%s%s?q={\"macAddress\":\"%s\"}",
-           _server_base_url, ENDPOINT_CONFIG, macAddress);
+  char baseConfigUrl[256];
+  build_endpoint_url(baseConfigUrl, sizeof(baseConfigUrl), ENDPOINT_CONFIG);
+
+  char url[320];
+  snprintf(url, sizeof(url), "%s?q={\"macAddress\":\"%s\"}",
+           baseConfigUrl, macAddress);
 
   Serial.print("  [GET] ");
   Serial.println(url);
@@ -260,7 +288,7 @@ bool save_sensor_data(SensorData* data) {
   HTTPClient http;
 
   char url[256];
-  snprintf(url, sizeof(url), "%s%s", _server_base_url, ENDPOINT_RILEVAZIONI);
+  build_endpoint_url(url, sizeof(url), ENDPOINT_RILEVAZIONI);
 
   // Converti timestamp in formato ISO 8601
   char isoTimestamp[32];
@@ -276,6 +304,14 @@ bool save_sensor_data(SensorData* data) {
   doc["ril_dato"] = data->valore;
   doc["ril_dataOra"] = isoTimestamp;
   doc["ril_sea_id"] = data->idSensore;
+  doc["ril_codice_stato"] = data->codiceStato;
+
+  if (strlen(data->macAddress) > 0) {
+    doc["macAddress"] = data->macAddress;
+  }
+  if (strlen(data->tipoSensore) > 0) {
+    doc["tipoSensore"] = data->tipoSensore;
+  }
 
   // ril_sea_id è un array con l'ID del sensore
   //JsonArray seaIdArray = doc.createNestedArray("ril_sea_id");
@@ -317,14 +353,88 @@ bool save_sensor_data(SensorData* data) {
 // timestamp: timestamp Unix della rilevazione
 // ============================================================================
 bool save_value(const char* sensorId, float valore, unsigned long timestamp) {
+  return save_value_with_context(sensorId, "", "", valore, timestamp, 9000);
+}
+
+bool save_value_with_context(const char* sensorId, const char* macAddress, const char* tipoSensore, float valore, unsigned long timestamp, int codiceStato) {
   SensorData data;
   memset(&data, 0, sizeof(data));
 
   strncpy(data.idSensore, sensorId, sizeof(data.idSensore) - 1);
+  if (macAddress != NULL) {
+    strncpy(data.macAddress, macAddress, sizeof(data.macAddress) - 1);
+  }
+  if (tipoSensore != NULL) {
+    strncpy(data.tipoSensore, tipoSensore, sizeof(data.tipoSensore) - 1);
+  }
   data.valore = valore;
   data.timestamp = timestamp;
+  data.codiceStato = codiceStato;
 
   return save_sensor_data(&data);
+}
+
+// ============================================================================
+// SEND SENSOR RUNTIME STATUS - Stato invio sensore / causa blocco
+// ============================================================================
+bool send_sensor_runtime_status(const char* macAddress, const char* tipoSensore,
+                                const char* sensorId, bool abilitato,
+                                const char* evento, const char* causaCodice,
+                                const char* causaDettaglio, int codiceStato,
+                                float valore, unsigned long timestamp) {
+  if (!is_data_manager_ready()) {
+    return false;
+  }
+  if (macAddress == NULL || strlen(macAddress) == 0 || tipoSensore == NULL || strlen(tipoSensore) == 0) {
+    return false;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
+  char url[256];
+  build_endpoint_url(url, sizeof(url), ENDPOINT_STATO_SENSORI);
+
+  char isoTimestamp[32];
+  timestampToISO(timestamp, isoTimestamp, sizeof(isoTimestamp));
+
+  StaticJsonDocument<768> doc;
+  doc["macAddress"] = macAddress;
+  doc["tipoSensore"] = tipoSensore;
+  doc["abilitato"] = abilitato;
+  doc["evento"] = (evento && strlen(evento) > 0) ? evento : "CONFIG_SYNC";
+  doc["timestamp"] = isoTimestamp;
+
+  if (sensorId && strlen(sensorId) > 0) {
+    doc["sensorId"] = sensorId;
+  }
+  if (causaCodice && strlen(causaCodice) > 0) {
+    doc["causaCodice"] = causaCodice;
+  }
+  if (causaDettaglio && strlen(causaDettaglio) > 0) {
+    doc["causaDettaglio"] = causaDettaglio;
+  }
+  if (codiceStato != 0) {
+    doc["codiceStato"] = codiceStato;
+  }
+  if (!isnan(valore) && !isinf(valore)) {
+    doc["valore"] = valore;
+  }
+
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+
+  http.begin(client, url);
+  http.setTimeout(_server_timeout);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-apikey", _server_api_key);
+
+  int httpCode = http.POST(jsonPayload);
+  bool success = (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED);
+  http.end();
+
+  return success;
 }
 
 // ============================================================================
@@ -350,7 +460,7 @@ bool send_notification(NotificationData* notification) {
   HTTPClient http;
 
   char url[256];
-  snprintf(url, sizeof(url), "%s%s", _server_base_url, ENDPOINT_NOTIFICHE);
+  build_endpoint_url(url, sizeof(url), ENDPOINT_NOTIFICHE);
 
   // Costruisci JSON
   StaticJsonDocument<512> doc;

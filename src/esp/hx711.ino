@@ -6,6 +6,7 @@
 // ============================================================================
 
 #include <HX711_ADC.h>
+#include <esp_task_wdt.h>
 #include "SensorValidation.h"
 
 // ============================================================================
@@ -55,14 +56,21 @@ static ConfigValidazioneSensore _configValidazionePeso = {
 void setup_hx711() {
   Serial.println("-> Inizializzazione HX711 (HX711_ADC)...");
 
+  esp_task_wdt_reset();
   LoadCell.begin();
+  esp_task_wdt_reset();
 
-  // Tempo di stabilizzazione e tara automatica
+  // Tempo di stabilizzazione e tara automatica.
+  // NOTA: LoadCell.start() blocca per stabilizingTime ms internamente
+  // (usa delay()). E' essenziale resettare il WDT prima e dopo per
+  // evitare che il TWDT scatti durante l'attesa di stabilizzazione.
   unsigned long stabilizingTime = 2000;
   boolean doTare = true;
 
-  Serial.println("  Stabilizzazione e tara in corso...");
+  Serial.println("  Stabilizzazione e tara in corso (2s)...");
+  esp_task_wdt_reset();   // reset prima del blocco da 2s
   LoadCell.start(stabilizingTime, doTare);
+  esp_task_wdt_reset();   // reset subito dopo il blocco
 
   if (LoadCell.getTareTimeoutFlag()) {
     Serial.println("  ! TIMEOUT: Controlla cablaggio HX711");

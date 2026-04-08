@@ -1251,7 +1251,4 @@ void stampaStatistiche() {
   Serial.print("Wi-Fi:  "); Serial.println(isWiFiConnected() ? "Connesso" : "Disconnesso");
   if (isWiFiConnected()) {
     Serial.print("SSID: "); Serial.println(WiFi.SSID());
-    Serial.print("RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
-  }
-  Serial.println();
-}
+    Serial.print("RSSI:

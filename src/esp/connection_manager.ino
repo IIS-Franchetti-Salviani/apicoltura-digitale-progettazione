@@ -157,10 +157,11 @@ ConfigData fetch_sensor_config(const char* macAddress) {
   // Valori default (sogliaMin, sogliaMax, intervallo, abilitato, sensorId, deltaMinimo)
   // SensorId vuoto se la configurazione non e' disponibile:
   // evita POST con FK invalida su ril_sea_id.
-  response.ds18b20           = {30.0f, 37.0f, 360000, true, "", 0.5f};
-  response.sht21_humidity    = {40.0f, 70.0f, 360000, true, "", 2.0f};
-  response.sht21_temperature = {10.0f, 45.0f, 360000, true, "", 0.5f};
-  response.hx711             = {10.0f, 80.0f,  60000, true, "", 0.05f};
+  // Struct init: {sogliaMin, sogliaMax, intervallo, abilitato, sensorId, deltaMinimo, calFactor, tareOffset}
+  response.ds18b20           = {30.0f, 37.0f, 360000, true, "", 0.5f,  0.0f, 0L};
+  response.sht21_humidity    = {40.0f, 70.0f, 360000, true, "", 2.0f,  0.0f, 0L};
+  response.sht21_temperature = {10.0f, 45.0f, 360000, true, "", 0.5f,  0.0f, 0L};
+  response.hx711             = {10.0f, 80.0f,  60000, true, "", 0.05f, 696.0f, 0L};
   response.calibrationFactor = 2280.0f;
   response.calibrationOffset = 50000;
 
@@ -243,13 +244,16 @@ ConfigData fetch_sensor_config(const char* macAddress) {
         response.hx711.intervallo  = config["hx711"]["intervallo"] | 10800000UL;
         response.hx711.abilitato   = config["hx711"]["sea_stato"]  | true;
         response.hx711.deltaMinimo = config["hx711"]["delta"]      | 0.05f;
+        // Calibrazione persistente cella di carico
+        response.hx711.calFactor   = config["hx711"]["cal_factor"]  | 696.0f;
+        response.hx711.tareOffset  = config["hx711"]["tare_offset"] | 0L;
         const char* id = config["hx711"]["_id"] | "";
         strncpy(response.hx711.sensorId, id, sizeof(response.hx711.sensorId) - 1);
       }
 
-      // Calibrazione peso
-      response.calibrationFactor = config["calibrationFactor"] | 2280.0f;
-      response.calibrationOffset = config["calibrationOffset"] | 50000L;
+      // Calibrazione peso (fallback top-level, retro-compatibilita')
+      response.calibrationFactor = config["calibrationFactor"] | response.hx711.calFactor;
+      response.calibrationOffset = config["calibrationOffset"] | response.hx711.tareOffset;
 
       response.success = true;
       Serial.println("  + Config caricata dal server");
@@ -438,6 +442,70 @@ bool send_sensor_runtime_status(const char* macAddress, const char* tipoSensore,
   bool success = (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED);
   http.end();
 
+  return success;
+}
+
+// ============================================================================
+// SAVE HX711 CALIBRATION - PATCH /configurazioni/<sensorId>
+// ============================================================================
+// Persiste sul server il nuovo fattore di calibrazione e/o il tare offset
+// della cella di carico. Chiamata dalla dashboard quando l'apicoltore
+// esegue una tara manuale (arnia vuota sulla bilancia) o dopo una
+// calibrazione con peso campione.
+//   sensorId     : sea_id numerico del sensore HX711 (da ConfigData.hx711.sensorId)
+//   calFactor    : nuovo fattore di calibrazione (NaN = non aggiornare)
+//   tareOffset   : nuovo offset ADC grezzo (LONG_MIN = non aggiornare)
+// Ritorna true se il server ha accettato l'update.
+// ============================================================================
+bool save_hx711_calibration(const char* sensorId, float calFactor, long tareOffset) {
+  if (!is_data_manager_ready()) {
+    Serial.println("  ! save_hx711_calibration: manager non pronto");
+    return false;
+  }
+  if (sensorId == NULL || strlen(sensorId) == 0) {
+    Serial.println("  ! save_hx711_calibration: sensorId mancante");
+    return false;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
+  char baseUrl[256];
+  build_endpoint_url(baseUrl, sizeof(baseUrl), ENDPOINT_CONFIG);
+
+  char url[320];
+  snprintf(url, sizeof(url), "%s/%s", baseUrl, sensorId);
+
+  StaticJsonDocument<192> doc;
+  if (!isnan(calFactor) && !isinf(calFactor)) {
+    doc["sea_cal_factor"] = calFactor;
+  }
+  if (tareOffset != LONG_MIN) {
+    doc["sea_tare_offset"] = tareOffset;
+  }
+
+  if (doc.size() == 0) {
+    Serial.println("  ! save_hx711_calibration: nessun campo da aggiornare");
+    return false;
+  }
+
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+
+  http.begin(client, url);
+  http.setTimeout(_server_timeout);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-apikey", _server_api_key);
+
+  int httpCode = http.PATCH(jsonPayload);
+  bool success = (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_NO_CONTENT);
+
+  Serial.print("  -> PATCH calibrazione HX711: HTTP ");
+  Serial.print(httpCode);
+  Serial.println(success ? " OK" : " ERR");
+
+  http.end();
   return success;
 }
 

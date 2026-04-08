@@ -143,6 +143,9 @@ struct SensorConfig {
   bool abilitato;           // sea_stato
   char sensorId[32];        // _id del sensore su MongoDB (sea)
   float deltaMinimo;        // sea_delta: variazione minima per invio anticipato (0 = disabilitato)
+  // Campi specifici cella di carico HX711 (ignorati dagli altri sensori)
+  float calFactor;          // sea_cal_factor: fattore di calibrazione HX711_ADC
+  long  tareOffset;         // sea_tare_offset: offset ADC grezzo per zero persistente
 };
 
 struct RisultatoValidazione {

@@ -40,8 +40,13 @@ static float _hx711_delta = 0.05f;          // kg — soglia variazione per invi
 static float _hx711_lastSentValue = NAN;
 static unsigned long _hx711_lastSentTime = 0;
 
-// Parametri calibrazione
-static float _hx711_calibration_factor = 696.0f;  // Valore di calibrazione
+// Parametri calibrazione persistente (caricati dal server in init_hx711)
+// - _hx711_calibration_factor: pendenza della cella (setCalFactor)
+// - _hx711_tare_offset:        zero ADC grezzo (setTareOffset)
+// Valori di fallback usati solo finché la config non arriva dal server.
+static float _hx711_calibration_factor = 696.0f;
+static long  _hx711_tare_offset        = 0L;
+static bool  _hx711_calibrazione_valida = false;
 
 // ============================================================================
 // CONFIGURAZIONE VALIDAZIONE PESO
@@ -65,14 +70,15 @@ void setup_hx711() {
   LoadCell.begin();
   esp_task_wdt_reset();
 
-  // Tempo di stabilizzazione e tara automatica.
-  // NOTA: LoadCell.start() blocca per stabilizingTime ms internamente
-  // (usa delay()). E' essenziale resettare il WDT prima e dopo per
-  // evitare che il TWDT scatti durante l'attesa di stabilizzazione.
+  // Avvio SENZA tara automatica: il nostro zero e' persistente, viene
+  // caricato dal server in init_hx711(). Questo garantisce letture
+  // assolute e confrontabili fra riavvii, OTA e reset watchdog.
+  // LoadCell.start() blocca per stabilizingTime ms internamente; e'
+  // essenziale resettare il WDT prima e dopo per evitare che scatti.
   unsigned long stabilizingTime = 2000;
-  boolean doTare = true;
+  boolean doTare = false;  // <-- IMPORTANTE: tara disabilitata
 
-  Serial.println("  Stabilizzazione e tara in corso (2s)...");
+  Serial.println("  Stabilizzazione HX711 (2s, senza tara)...");
   esp_task_wdt_reset();   // reset prima del blocco da 2s
   LoadCell.start(stabilizingTime, doTare);
   esp_task_wdt_reset();   // reset subito dopo il blocco
@@ -87,14 +93,16 @@ void setup_hx711() {
     return;
   }
 
-  // Imposta fattore di calibrazione
+  // Applica il fattore di calibrazione di fallback finche' init_hx711
+  // non sovrascrivera' con il valore dal server.
   LoadCell.setCalFactor(_hx711_calibration_factor);
 
   _hx711_inizializzato = true;
-  _hx711_tarato = true;
+  _hx711_tarato = false;          // Non siamo ancora tarati: attendiamo init_hx711
+  _hx711_calibrazione_valida = false;
 
-  Serial.println("  + HX711 inizializzato e tarato");
-  Serial.print("    Calibration factor: ");
+  Serial.println("  + HX711 inizializzato (in attesa di calibrazione dal server)");
+  Serial.print("    Fallback cal factor: ");
   Serial.println(_hx711_calibration_factor);
   Serial.println();
 }
@@ -114,6 +122,28 @@ void init_hx711(SensorConfig* config) {
     _hx711_intervallo = config->intervallo;
     _hx711_abilitato  = config->abilitato;
     _hx711_delta      = config->deltaMinimo;
+
+    // Applica calibrazione persistente dal server.
+    if (config->calFactor > 0.0f && !isnan(config->calFactor) && !isinf(config->calFactor)) {
+      _hx711_calibration_factor = config->calFactor;
+      LoadCell.setCalFactor(_hx711_calibration_factor);
+    }
+    // Il tare offset e' valido solo se diverso da 0 (0 = "tara mai eseguita").
+    // L'apicoltore deve eseguire la tara iniziale dalla dashboard con
+    // arnia vuota sulla bilancia.
+    if (config->tareOffset != 0L) {
+      _hx711_tare_offset = config->tareOffset;
+      LoadCell.setTareOffset(_hx711_tare_offset);
+      _hx711_tarato = true;
+      _hx711_calibrazione_valida = true;
+    } else {
+      _hx711_tarato = false;
+      _hx711_calibrazione_valida = false;
+      Serial.println("  ! ATTENZIONE: tare_offset=0 -> tara non ancora eseguita");
+      Serial.println("    Letture peso non affidabili finche' non esegui la tara");
+      Serial.println("    dalla dashboard (http://<ip_esp>/hx711/tare) con");
+      Serial.println("    arnia VUOTA sulla bilancia.");
+    }
   }
   _hx711_lastSentTime  = 0;   // forza primo campione
   _hx711_lastSentValue = NAN;
@@ -123,7 +153,10 @@ void init_hx711(SensorConfig* config) {
   Serial.print("    Soglia MAX: "); Serial.print(_hx711_sogliaMax);  Serial.println(" kg");
   Serial.print("    Intervallo: "); Serial.print(_hx711_intervallo / 1000); Serial.println(" sec");
   Serial.print("    Delta min:  "); Serial.print(_hx711_delta);       Serial.println(" kg");
-  Serial.print("    Abilitato: "); Serial.println(_hx711_abilitato ? "SI" : "NO");
+  Serial.print("    Cal factor: "); Serial.println(_hx711_calibration_factor);
+  Serial.print("    Tare offset:"); Serial.println(_hx711_tare_offset);
+  Serial.print("    Calibrato:  "); Serial.println(_hx711_calibrazione_valida ? "SI" : "NO");
+  Serial.print("    Abilitato:  "); Serial.println(_hx711_abilitato ? "SI" : "NO");
   Serial.println();
 }
 
@@ -152,28 +185,44 @@ void calibrate_hx711(float calibration_factor, long offset) {
 // ============================================================================
 // TARA MANUALE
 // ============================================================================
+// Esegue una nuova tara e aggiorna _hx711_tare_offset con il valore ADC
+// grezzo rilevato. Dopo averla eseguita, il chiamante deve persistere il
+// nuovo offset sul server (save_hx711_calibration) altrimenti al prossimo
+// boot verra' ricaricato il vecchio valore.
+// ============================================================================
 bool tare_hx711() {
   if (!_hx711_inizializzato) return false;
 
   Serial.println("  Esecuzione tara...");
+  esp_task_wdt_reset();
   LoadCell.tareNoDelay();
 
   // Attendi completamento tara
-  unsigned long timeout = millis() + 3000;
+  unsigned long timeout = millis() + 5000;
   while (!LoadCell.getTareStatus() && millis() < timeout) {
     LoadCell.update();
+    esp_task_wdt_reset();
     delay(10);
   }
 
   if (LoadCell.getTareStatus()) {
+    // Cattura il nuovo offset ADC grezzo per persistenza
+    _hx711_tare_offset = LoadCell.getTareOffset();
     _hx711_tarato = true;
-    Serial.println("  + Tara completata");
+    _hx711_calibrazione_valida = true;
+    Serial.print("  + Tara completata. Nuovo tare_offset = ");
+    Serial.println(_hx711_tare_offset);
     return true;
   } else {
     Serial.println("  ! Tara fallita (timeout)");
     return false;
   }
 }
+
+// Getter usati da esp.ino per persistere la calibrazione sul server
+long  get_tare_offset_hx711()  { return _hx711_tare_offset; }
+float get_cal_factor_hx711()   { return _hx711_calibration_factor; }
+bool  is_calibrato_hx711()     { return _hx711_calibrazione_valida; }
 
 // ============================================================================
 // LETTURA PESO

@@ -102,6 +102,13 @@ extern void calibrate_hx711(float calibration_factor, long offset);
 extern RisultatoValidazione read_weight_hx711();
 extern unsigned long get_intervallo_hx711();
 extern bool is_abilitato_hx711();
+extern bool tare_hx711();
+extern long  get_tare_offset_hx711();
+extern float get_cal_factor_hx711();
+extern bool  is_calibrato_hx711();
+
+// PATCH calibrazione HX711 al server (da connection_manager.ino)
+extern bool save_hx711_calibration(const char* sensorId, float calFactor, long tareOffset);
 
 // ============================================================================
 // DICHIARAZIONI EXTERN - ADAPTIVE SAMPLING (should_send / mark_sent / init flag)
@@ -471,7 +478,9 @@ void handleDashboardHome() {
   html += "@media (max-width:1200px){.grid{grid-template-columns:repeat(2,minmax(220px,1fr));}}";
   html += "@media (max-width:640px){.grid{grid-template-columns:1fr;}}";
   html += "</style></head><body><main>";
-  html += "<div class='top'><h1>Dashboard Arnia ESP32 (Landscape)</h1><a class='btn' href='/fw'>Upload firmware</a></div>";
+  html += "<div class='top'><h1>Dashboard Arnia ESP32 (Landscape)</h1>";
+  html += "<div><a class='btn' href='/hx711/tare' style='background:#b91c1c;margin-right:8px;'>Tara HX711</a>";
+  html += "<a class='btn' href='/fw'>Upload firmware</a></div></div>";
   html += "<div class='meta'><strong>MAC:</strong> ";
   html += String(deviceMacAddress);
   html += " | <strong>Wi-Fi:</strong> ";
@@ -568,16 +577,97 @@ void handleFirmwareUploadResult() {
   ESP.restart();
 }
 
+// ============================================================================
+// HANDLER: pagina tara HX711 (GET mostra form, POST esegue la tara)
+// ============================================================================
+void handleHx711TareGet() {
+  if (!ensureFirmwareAuth()) return;
+
+  String html;
+  html.reserve(2400);
+  html += "<!doctype html><html lang='it'><head><meta charset='utf-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<title>HX711 - Tara</title>";
+  html += "<style>body{font-family:Arial,sans-serif;background:#f4f7fb;margin:0;padding:18px;color:#111;}";
+  html += ".card{background:#fff;border:1px solid #d2def0;border-radius:12px;padding:18px;max-width:560px;margin:0 auto;box-shadow:0 2px 6px rgba(0,0,0,0.06);}";
+  html += "h1{margin:0 0 10px 0;font-size:1.25rem;}p{font-size:0.92rem;line-height:1.4;}";
+  html += ".warn{background:#fff7e6;border:1px solid #ffd591;border-radius:8px;padding:10px;margin:12px 0;color:#873800;}";
+  html += ".meta{background:#eef5ff;border-radius:8px;padding:10px;font-size:0.88rem;margin:12px 0;}";
+  html += "button{background:#b91c1c;color:#fff;border:0;border-radius:9px;padding:12px 18px;font-weight:700;font-size:1rem;cursor:pointer;}";
+  html += "button:hover{background:#7f1d1d;}a{color:#0b57d0;text-decoration:none;}</style></head><body><div class='card'>";
+  html += "<h1>Tara cella di carico HX711</h1>";
+  html += "<p>Questa operazione imposta lo <strong>zero persistente</strong> della bilancia. Dovra' essere eseguita <strong>una sola volta</strong> in fase di installazione, con l'arnia <strong>vuota</strong> (cassetta + telaini vuoti + coperchio) gia' posizionata sulla bilancia. Il nuovo offset verra' salvato sul server.</p>";
+  html += "<div class='warn'><strong>ATTENZIONE:</strong> NON eseguire questa tara con api o miele nell'arnia, altrimenti quel peso diventera' lo zero e tutte le letture successive saranno sbagliate.</div>";
+  html += "<div class='meta'>";
+  html += "<strong>Cal factor attuale:</strong> "; html += String(get_cal_factor_hx711(), 2); html += "<br>";
+  html += "<strong>Tare offset attuale:</strong> "; html += String(get_tare_offset_hx711()); html += "<br>";
+  html += "<strong>Stato calibrazione:</strong> "; html += (is_calibrato_hx711() ? "CALIBRATO" : "DA CALIBRARE");
+  html += "</div>";
+  html += "<form method='POST' action='/hx711/tare' onsubmit=\"return confirm('Confermi esecuzione tara con arnia VUOTA?');\">";
+  html += "<button type='submit'>Esegui tara ora</button>";
+  html += "</form><p style='margin-top:14px;'><a href='/'>&larr; Torna alla dashboard</a></p>";
+  html += "</div></body></html>";
+  deviceWebServer.send(200, "text/html; charset=utf-8", html);
+}
+
+void handleHx711TarePost() {
+  if (!ensureFirmwareAuth()) return;
+
+  Serial.println("\n[HX711] Richiesta tara manuale dalla dashboard");
+
+  if (!tare_hx711()) {
+    deviceWebServer.send(500, "text/plain; charset=utf-8",
+                         "Tara fallita. Controlla il Serial Monitor.");
+    return;
+  }
+
+  long nuovoOffset = get_tare_offset_hx711();
+  float calFactor  = get_cal_factor_hx711();
+
+  // Persistenza sul server
+  const char* sensorId = configSensori.hx711.sensorId;
+  bool salvato = false;
+  if (strlen(sensorId) > 0) {
+    salvato = save_hx711_calibration(sensorId, calFactor, nuovoOffset);
+  } else {
+    Serial.println("  ! sensorId HX711 non configurato, offset NON persistito");
+  }
+
+  // Nota: il prossimo ciclo di lettura adaptive forzera' comunque un
+  // nuovo campione (_hx711_lastSentTime non e' azzerato qui, ma la
+  // variazione rispetto al vecchio valore inviato sara' >= delta).
+
+  String html;
+  html.reserve(1200);
+  html += "<!doctype html><html lang='it'><head><meta charset='utf-8'>";
+  html += "<meta http-equiv='refresh' content='4; url=/'>";
+  html += "<title>HX711 - Tara eseguita</title>";
+  html += "<style>body{font-family:Arial,sans-serif;background:#f0fdf4;padding:20px;}";
+  html += ".card{background:#fff;border:1px solid #bbf7d0;border-radius:12px;padding:18px;max-width:560px;margin:0 auto;}";
+  html += "h1{color:#166534;}code{background:#f1f5f9;padding:2px 6px;border-radius:4px;}</style></head><body><div class='card'>";
+  html += "<h1>Tara completata</h1>";
+  html += "<p><strong>Nuovo tare offset:</strong> <code>"; html += String(nuovoOffset); html += "</code></p>";
+  html += "<p><strong>Cal factor:</strong> <code>"; html += String(calFactor, 2); html += "</code></p>";
+  html += "<p><strong>Persistito sul server:</strong> ";
+  html += (salvato ? "SI" : "NO (controlla connessione / sensorId)");
+  html += "</p><p>Reindirizzamento alla dashboard in 4 secondi...</p></div></body></html>";
+
+  deviceWebServer.send(200, "text/html; charset=utf-8", html);
+}
+
 void initDeviceWebServer() {
   deviceWebServer.on("/", HTTP_GET, handleDashboardHome);
   deviceWebServer.on("/fw", HTTP_GET, handleFirmwarePage);
   deviceWebServer.on("/fw/upload", HTTP_POST, handleFirmwareUploadResult, handleFirmwareUploadStream);
+  deviceWebServer.on("/hx711/tare", HTTP_GET,  handleHx711TareGet);
+  deviceWebServer.on("/hx711/tare", HTTP_POST, handleHx711TarePost);
   deviceWebServer.onNotFound([]() {
     deviceWebServer.send(404, "application/json; charset=utf-8", "{\"error\":\"Not found\"}");
   });
   deviceWebServer.begin();
   Serial.println("  + Web dashboard locale attiva su porta 80");
   Serial.println("    URL: http://<ip-esp>/");
+  Serial.println("    Tara HX711: http://<ip-esp>/hx711/tare");
   Serial.println("    FW user: admin (password uguale a OTA)");
 }
 
@@ -1161,7 +1251,4 @@ void stampaStatistiche() {
   Serial.print("Wi-Fi:  "); Serial.println(isWiFiConnected() ? "Connesso" : "Disconnesso");
   if (isWiFiConnected()) {
     Serial.print("SSID: "); Serial.println(WiFi.SSID());
-    Serial.print("RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
-  }
-  Serial.println();
-}
+    Serial.print("RSSI:

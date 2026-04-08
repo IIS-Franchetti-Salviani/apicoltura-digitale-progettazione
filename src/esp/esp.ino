@@ -25,7 +25,9 @@ uint32_t last_ota_time = 0;
 const char* WIFI_NETWORKS[][2] = {
   {"Gruppo4Network", "Networks"},
   {"ASUS_RiceWLan", "pippoplutopaperinominnie"},
-  {"didattica", "FdWt101099stdZ%("}
+  {"didattica", "FdWt101099stdZ%("},
+  {"TIM-08472073", "Epm9NEn6LKQM836y"},
+  {"WINDTRE-A22DD8", "2nxkfmx7xsxdkf9k"}
 };
 const int NUM_NETWORKS = 3;
 

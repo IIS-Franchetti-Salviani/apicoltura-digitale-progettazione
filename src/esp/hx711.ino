@@ -231,50 +231,42 @@ bool tare_hx711() {
   }
 
   // --- STEP 2: disabilita il timeout interno della libreria ---
-  // La libreria HX711_ADC calcola il timeout come
-  //   (SAMPLES + IGN_HIGH + IGN_LOW) * 150 ms
-  // che a 10 SPS puo' risultare stretto se la linea DOUT ha jitter.
-  // Lo disabilitiamo e ci affidiamo al nostro cap a 10s piu' sotto.
+  // (La libreria chiamerebbe comunque tareTimeoutFlag dentro a tare())
   LoadCell.disableTareTimeout();
 
-  // --- STEP 3: esegui tara asincrona e attendi completamento ---
-  Serial.println("  [TARA] Invio comando tareNoDelay()...");
-  LoadCell.tareNoDelay();
-
+  // --- STEP 3: tara BLOCCANTE ---
+  // tare() internamente chiama update() in loop + yield(), accumula
+  // SAMPLES+IGN_HIGH+IGN_LOW letture grezze e calcola la media. E' la
+  // stessa identica sequenza usata da LoadCell.start(_, true) in setup
+  // (che storicamente ha sempre funzionato).
+  // A 10 SPS servono tipicamente 1.5-2.5 secondi. Resettiamo il WDT
+  // prima e dopo, e yield() interno alla libreria dovrebbe bastare a
+  // mantenere vivi gli altri task.
+  Serial.println("  [TARA] Esecuzione tare() bloccante (max ~3s)...");
+  esp_task_wdt_reset();
   unsigned long tareStart = millis();
-  unsigned long tareDeadline = tareStart + 10000;  // 10s cap assoluto
-  unsigned long lastLog = tareStart;
-  int updatesCount = 0;
-  while (!LoadCell.getTareStatus() && millis() < tareDeadline) {
-    if (LoadCell.update()) updatesCount++;
-    esp_task_wdt_reset();
+  LoadCell.tare();
+  unsigned long tareDuration = millis() - tareStart;
+  esp_task_wdt_reset();
 
-    // Log di progresso ogni 1s per capire se la libreria sta avanzando
-    if (millis() - lastLog >= 1000) {
-      Serial.print("    ... ");
-      Serial.print((millis() - tareStart) / 1000);
-      Serial.print("s  updates=");
-      Serial.println(updatesCount);
-      lastLog = millis();
-    }
-
-    delay(5);
+  if (LoadCell.getTareTimeoutFlag()) {
+    Serial.print("  ! TARA FALLITA: tareTimeoutFlag set dopo ");
+    Serial.print(tareDuration);
+    Serial.println(" ms");
+    Serial.println("    La libreria non ha ricevuto abbastanza sample.");
+    Serial.println("    Controlla cablaggio HX711 (DOUT/SCK) e alimentazione.");
+    return false;
   }
 
-  if (LoadCell.getTareStatus()) {
-    _hx711_tare_offset = LoadCell.getTareOffset();
-    _hx711_tarato = true;
-    _hx711_calibrazione_valida = true;
-    Serial.println("  + TARA COMPLETATA");
-    Serial.print("    Updates totali: "); Serial.println(updatesCount);
-    Serial.print("    Nuovo tare_offset (ADC grezzo): ");
-    Serial.println(_hx711_tare_offset);
-    return true;
-  }
-
-  Serial.println("  ! TARA FALLITA: timeout globale (10s) senza completamento");
-  Serial.print("    Updates totali: "); Serial.println(updatesCount);
-  return false;
+  _hx711_tare_offset = LoadCell.getTareOffset();
+  _hx711_tarato = true;
+  _hx711_calibrazione_valida = true;
+  Serial.print("  + TARA COMPLETATA in ");
+  Serial.print(tareDuration);
+  Serial.println(" ms");
+  Serial.print("    Nuovo tare_offset (ADC grezzo): ");
+  Serial.println(_hx711_tare_offset);
+  return true;
 }
 
 // Getter usati da esp.ino per persistere la calibrazione sul server

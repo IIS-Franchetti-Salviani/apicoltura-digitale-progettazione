@@ -25,6 +25,11 @@ static bool _ds18b20_abilitato = true;
 static bool _ds18b20_inizializzato = false;
 static int _ds18b20_contatore = 0;
 
+// --- LOGICA CAMPIONAMENTO ADATTIVO ---
+static float _ds18b20_delta = 0.5f;         // variazione minima °C per invio anticipato
+static float _ds18b20_lastSentValue = NAN;  // ultimo valore effettivamente inviato
+static unsigned long _ds18b20_lastSentTime = 0; // 0 = mai inviato → forza primo invio
+
 // Configurazione per SensorValidation.h
 static ConfigValidazioneSensore _configValidazioneTemp = {
   .rangeMin = -40.0f,
@@ -47,6 +52,9 @@ void setup_ds18b20() {
   Serial.println(F("-> Avvio scansione bus OneWire..."));
 
   esp_task_wdt_reset();
+  // Pull-up interno ~45kΩ: sufficiente per test al banco con cavo corto (<10cm).
+  // Per installazione definitiva in arnia usare resistenza esterna 4.7kΩ tra DATA e VCC.
+  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   sensors.begin();
   esp_task_wdt_reset();
 
@@ -91,16 +99,20 @@ void init_ds18b20(SensorConfig* config) {
     return;
   }
 
-  _ds18b20_sogliaMin = config->sogliaMin;
-  _ds18b20_sogliaMax = config->sogliaMax;
-  _ds18b20_intervallo = config->intervallo;
-  _ds18b20_abilitato = config->abilitato;
-  _ds18b20_contatore = 0;
+  _ds18b20_sogliaMin    = config->sogliaMin;
+  _ds18b20_sogliaMax    = config->sogliaMax;
+  _ds18b20_intervallo   = config->intervallo;
+  _ds18b20_abilitato    = config->abilitato;
+  _ds18b20_delta        = config->deltaMinimo;
+  _ds18b20_contatore    = 0;
+  _ds18b20_lastSentTime  = 0;   // forza campione immediato al primo tick
+  _ds18b20_lastSentValue = NAN;
 
   Serial.println(F("  --- Config DS18B20 caricata ---"));
-  Serial.print("    Soglia MIN: "); Serial.print(_ds18b20_sogliaMin); Serial.println(" °C");
-  Serial.print("    Soglia MAX: "); Serial.print(_ds18b20_sogliaMax); Serial.println(" °C");
+  Serial.print("    Soglia MIN: "); Serial.print(_ds18b20_sogliaMin); Serial.println(" C");
+  Serial.print("    Soglia MAX: "); Serial.print(_ds18b20_sogliaMax); Serial.println(" C");
   Serial.print("    Intervallo: "); Serial.print(_ds18b20_intervallo / 1000); Serial.println(" sec");
+  Serial.print("    Delta min:  "); Serial.print(_ds18b20_delta);     Serial.println(" C");
   Serial.print("    Abilitato: "); Serial.println(_ds18b20_abilitato ? "SI" : "NO");
 }
 
@@ -175,12 +187,46 @@ void printAddress(uint8_t* deviceAddress) {
 }
 
 // ============================================================================
-// GETTERS
+// CAMPIONAMENTO ADATTIVO - should_send / mark_sent
 // ============================================================================
-unsigned long get_intervallo_ds18b20() { 
-  return _ds18b20_intervallo; 
+// Restituisce true se il dato va inviato al server, ovvero se:
+//   1. E' il primo campione (lastSentTime == 0, mai inviato)
+//   2. L'intervallo configurato e' scaduto
+//   3. La variazione rispetto all'ultimo valore inviato supera il delta minimo
+// Il loop principale chiama questa funzione ogni secondo dopo aver letto il sensore.
+bool should_send_ds18b20(float nuovoValore) {
+  // 1. Primo campione: invia sempre
+  if (_ds18b20_lastSentTime == 0) return true;
+
+  // 2. Intervallo scaduto
+  if (millis() - _ds18b20_lastSentTime >= _ds18b20_intervallo) return true;
+
+  // 3. Variazione superiore al delta (se delta > 0 e valore precedente valido)
+  if (_ds18b20_delta > 0.0f && !isnan(_ds18b20_lastSentValue)) {
+    if (fabs(nuovoValore - _ds18b20_lastSentValue) >= _ds18b20_delta) return true;
+  }
+
+  return false;
 }
 
-bool is_abilitato_ds18b20() { 
-  return _ds18b20_abilitato; 
+// Registra che il dato e' stato inviato: aggiorna valore e timestamp,
+// resettando il timer dell'intervallo.
+void mark_sent_ds18b20(float valoreinviato) {
+  _ds18b20_lastSentValue = valoreinviato;
+  _ds18b20_lastSentTime  = millis();
+}
+
+// ============================================================================
+// GETTERS
+// ============================================================================
+unsigned long get_intervallo_ds18b20() {
+  return _ds18b20_intervallo;
+}
+
+bool is_abilitato_ds18b20() {
+  return _ds18b20_abilitato;
+}
+
+bool is_inizializzato_ds18b20() {
+  return _ds18b20_inizializzato;
 }

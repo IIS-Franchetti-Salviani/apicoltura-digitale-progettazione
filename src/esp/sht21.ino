@@ -26,7 +26,10 @@ static float _sht21_umidita_sogliaMax = 70.0f;
 static unsigned long _sht21_umidita_intervallo = 360000;
 static bool _sht21_umidita_abilitato = true;
 static int _sht21_umidita_contatore = 0;
-static unsigned long _last_read_time_hum = 0;
+// Campionamento adattivo umidita
+static float _sht21_hum_delta = 2.0f;
+static float _sht21_hum_lastSentValue = NAN;
+static unsigned long _sht21_hum_lastSentTime = 0;
 
 // ============================================================================
 // VARIABILI INTERNE - TEMPERATURA
@@ -36,7 +39,10 @@ static float _sht21_temp_sogliaMax = 40.0f;
 static unsigned long _sht21_temp_intervallo = 360000;
 static bool _sht21_temp_abilitato = true;
 static int _sht21_temp_contatore = 0;
-static unsigned long _last_read_time_temp = 0;
+// Campionamento adattivo temperatura
+static float _sht21_temp_delta = 0.5f;
+static float _sht21_temp_lastSentValue = NAN;
+static unsigned long _sht21_temp_lastSentTime = 0;
 
 // ============================================================================
 // STATO SENSORE
@@ -107,17 +113,21 @@ void setup_sht21() {
 void init_humidity_sht21(SensorConfig* config) {
   if (config == NULL) return;
 
-  _sht21_umidita_sogliaMin = config->sogliaMin;
-  _sht21_umidita_sogliaMax = config->sogliaMax;
+  _sht21_umidita_sogliaMin  = config->sogliaMin;
+  _sht21_umidita_sogliaMax  = config->sogliaMax;
   _sht21_umidita_intervallo = config->intervallo;
-  _sht21_umidita_abilitato = config->abilitato;
-  _sht21_umidita_contatore = 0;
+  _sht21_umidita_abilitato  = config->abilitato;
+  _sht21_hum_delta          = config->deltaMinimo;
+  _sht21_umidita_contatore  = 0;
+  _sht21_hum_lastSentTime   = 0;   // forza primo campione
+  _sht21_hum_lastSentValue  = NAN;
 
   Serial.println("  --- Config SHT21 Umidita caricata dal DB ---");
   Serial.print("    Soglia MIN: "); Serial.print(_sht21_umidita_sogliaMin); Serial.println(" %");
   Serial.print("    Soglia MAX: "); Serial.print(_sht21_umidita_sogliaMax); Serial.println(" %");
   Serial.print("    Intervallo: "); Serial.print(_sht21_umidita_intervallo / 1000.0); Serial.println(" sec");
-  Serial.print("    Abilitato: "); Serial.println(_sht21_umidita_abilitato ?  "SI" : "NO");
+  Serial.print("    Delta min:  "); Serial.print(_sht21_hum_delta);          Serial.println(" %");
+  Serial.print("    Abilitato: "); Serial.println(_sht21_umidita_abilitato ? "SI" : "NO");
 }
 
 // ============================================================================
@@ -126,17 +136,21 @@ void init_humidity_sht21(SensorConfig* config) {
 void init_temperature_sht21(SensorConfig* config) {
   if (config == NULL) return;
 
-  _sht21_temp_sogliaMin = config->sogliaMin;
-  _sht21_temp_sogliaMax = config->sogliaMax;
+  _sht21_temp_sogliaMin  = config->sogliaMin;
+  _sht21_temp_sogliaMax  = config->sogliaMax;
   _sht21_temp_intervallo = config->intervallo;
-  _sht21_temp_abilitato = config->abilitato;
-  _sht21_temp_contatore = 0;
+  _sht21_temp_abilitato  = config->abilitato;
+  _sht21_temp_delta      = config->deltaMinimo;
+  _sht21_temp_contatore  = 0;
+  _sht21_temp_lastSentTime  = 0;   // forza primo campione
+  _sht21_temp_lastSentValue = NAN;
 
   Serial.println("  --- Config SHT21 Temperatura caricata dal DB ---");
-  Serial.print("    Soglia MIN:  "); Serial.print(_sht21_temp_sogliaMin); Serial.println(" C");
-  Serial.print("    Soglia MAX: "); Serial.print(_sht21_temp_sogliaMax); Serial.println(" C");
-  Serial.print("    Intervallo: "); Serial.print(_sht21_temp_intervallo / 1000.0); Serial.println(" sec");
-  Serial.print("    Abilitato: "); Serial.println(_sht21_temp_abilitato ? "SI" : "NO");
+  Serial.print("    Soglia MIN:  "); Serial.print(_sht21_temp_sogliaMin);  Serial.println(" C");
+  Serial.print("    Soglia MAX:  "); Serial.print(_sht21_temp_sogliaMax);  Serial.println(" C");
+  Serial.print("    Intervallo:  "); Serial.print(_sht21_temp_intervallo / 1000.0); Serial.println(" sec");
+  Serial.print("    Delta min:   "); Serial.print(_sht21_temp_delta);       Serial.println(" C");
+  Serial.print("    Abilitato:   "); Serial.println(_sht21_temp_abilitato ? "SI" : "NO");
 }
 
 // ============================================================================
@@ -163,19 +177,9 @@ RisultatoValidazione read_humidity_sht21() {
     return risultato;
   }
 
-  // 3. CHECK INTERVALLO
-  if (millis() - _last_read_time_hum < _sht21_umidita_intervallo) {
-    risultato.valido = false;
-    risultato.codiceErrore = 0;
-    risultato.valorePulito = _configValidazioneUmidita.valoreDefault;
-    strcpy(risultato.messaggioErrore, "Intervallo non trascorso");
-    return risultato;
-  }
-
-  // Aggiorniamo il tempo dell'ultima lettura
-  _last_read_time_hum = millis();
-
-  // 4. LETTURA E VALIDAZIONE
+  // 3. LETTURA E VALIDAZIONE
+  // (il controllo dell'intervallo e il delta sono gestiti dal loop esterno
+  //  tramite should_send_humidity_sht21 / mark_sent_humidity_sht21)
   float umidita = sht21.readHumidity();
   bool sensoreReady = ! isnan(umidita);
   unsigned long timestamp = millis();
@@ -223,18 +227,9 @@ RisultatoValidazione read_temperature_sht21() {
     return risultato;
   }
 
-  // 3. CHECK INTERVALLO
-  if (millis() - _last_read_time_temp < _sht21_temp_intervallo) {
-    risultato.valido = false;
-    risultato.codiceErrore = 0;
-    risultato.valorePulito = 25.0f;
-    strcpy(risultato.messaggioErrore, "Intervallo non trascorso");
-    return risultato;
-  }
-
-  _last_read_time_temp = millis();
-
-  // 4. LETTURA E VALIDAZIONE
+  // 3. LETTURA E VALIDAZIONE
+  // (il controllo dell'intervallo e il delta sono gestiti dal loop esterno
+  //  tramite should_send_temperature_sht21 / mark_sent_temperature_sht21)
   float temperatura = sht21.readTemperature();
   bool sensoreReady = !isnan(temperatura);
   unsigned long timestamp = millis();
@@ -254,6 +249,40 @@ RisultatoValidazione read_temperature_sht21() {
   }
 
   return risultato;
+}
+
+// ============================================================================
+// CAMPIONAMENTO ADATTIVO - UMIDITA
+// ============================================================================
+bool should_send_humidity_sht21(float nuovoValore) {
+  if (_sht21_hum_lastSentTime == 0) return true;
+  if (millis() - _sht21_hum_lastSentTime >= _sht21_umidita_intervallo) return true;
+  if (_sht21_hum_delta > 0.0f && !isnan(_sht21_hum_lastSentValue)) {
+    if (fabs(nuovoValore - _sht21_hum_lastSentValue) >= _sht21_hum_delta) return true;
+  }
+  return false;
+}
+
+void mark_sent_humidity_sht21(float valoreInviato) {
+  _sht21_hum_lastSentValue = valoreInviato;
+  _sht21_hum_lastSentTime  = millis();
+}
+
+// ============================================================================
+// CAMPIONAMENTO ADATTIVO - TEMPERATURA
+// ============================================================================
+bool should_send_temperature_sht21(float nuovoValore) {
+  if (_sht21_temp_lastSentTime == 0) return true;
+  if (millis() - _sht21_temp_lastSentTime >= _sht21_temp_intervallo) return true;
+  if (_sht21_temp_delta > 0.0f && !isnan(_sht21_temp_lastSentValue)) {
+    if (fabs(nuovoValore - _sht21_temp_lastSentValue) >= _sht21_temp_delta) return true;
+  }
+  return false;
+}
+
+void mark_sent_temperature_sht21(float valoreInviato) {
+  _sht21_temp_lastSentValue = valoreInviato;
+  _sht21_temp_lastSentTime  = millis();
 }
 
 // ============================================================================

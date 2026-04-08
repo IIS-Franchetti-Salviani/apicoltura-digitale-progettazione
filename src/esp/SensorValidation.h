@@ -139,9 +139,10 @@ struct ConfigValidazioneSensore {
 struct SensorConfig {
   float sogliaMin;          // sea_min
   float sogliaMax;          // sea_max
-  unsigned long intervallo;
+  unsigned long intervallo; // sea_intervallo_ms
   bool abilitato;           // sea_stato
   char sensorId[32];        // _id del sensore su MongoDB (sea)
+  float deltaMinimo;        // sea_delta: variazione minima per invio anticipato (0 = disabilitato)
 };
 
 struct RisultatoValidazione {

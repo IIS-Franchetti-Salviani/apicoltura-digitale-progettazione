@@ -127,6 +127,7 @@ CREATE TABLE SensoreArnia (
     sea_min DOUBLE DEFAULT NULL,
     sea_max DOUBLE DEFAULT NULL,
     sea_intervallo_ms INT UNSIGNED NOT NULL DEFAULT 360000,
+    sea_delta DOUBLE DEFAULT NULL,         -- variazione minima per invio anticipato (NULL = disabilitato)
     sea_note VARCHAR(255) DEFAULT NULL,
     sea_aggiornato_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (sea_id),

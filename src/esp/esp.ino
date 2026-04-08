@@ -102,6 +102,21 @@ extern unsigned long get_intervallo_hx711();
 extern bool is_abilitato_hx711();
 
 // ============================================================================
+// DICHIARAZIONI EXTERN - ADAPTIVE SAMPLING (should_send / mark_sent / init flag)
+// ============================================================================
+extern bool should_send_ds18b20(float nuovoValore);
+extern void mark_sent_ds18b20(float valoreInviato);
+extern bool is_inizializzato_ds18b20();
+
+extern bool should_send_humidity_sht21(float nuovoValore);
+extern void mark_sent_humidity_sht21(float valoreInviato);
+extern bool should_send_temperature_sht21(float nuovoValore);
+extern void mark_sent_temperature_sht21(float valoreInviato);
+
+extern bool should_send_hx711(float nuovoValore);
+extern void mark_sent_hx711(float valoreInviato);
+
+// ============================================================================
 // TIMING
 // ============================================================================
 unsigned long ultimoCheck_ds18b20 = 0;
@@ -109,6 +124,9 @@ unsigned long ultimoCheck_sht21_humidity = 0;
 unsigned long ultimoCheck_sht21_temperature = 0;
 unsigned long ultimoCheck_hx711 = 0;
 unsigned long ultimoCheckWiFi = 0;
+
+// Tick globale per il campionamento adattivo (1 s nominali)
+static unsigned long _sensorTickMs = 0;
 
 // ============================================================================
 // STATO SISTEMA
@@ -995,16 +1013,37 @@ void loop() {
 
   checkWiFiConnection();
 
-  // DS18B20
-  if (is_abilitato_ds18b20() && intervalloTrascorso(ultimoCheck_ds18b20, get_intervallo_ds18b20())) {
-    Serial.println("\n[DS18B20] LETTURA TEMPERATURA INTERNA");
-    RisultatoValidazione risultato = read_temperature_ds18b20();
-    gestisciRisultatoSensore(risultato);
+  // ── Adaptive sampling tick ────────────────────────────────────────────────
+  // Ogni 1000 ms leggiamo tutti i sensori abilitati. L'invio al server
+  // avviene solo se:
+  //   - è il primo campione dopo boot/init_* (gestito da should_send_*)
+  //   - l'intervallo configurato (sea_intervallo_ms) è scaduto
+  //   - la variazione rispetto all'ultimo valore INVIATO supera sea_delta
+  // Per le letture NON valide manteniamo il throttle via intervalloTrascorso
+  // per evitare di allagare il server di runtime-status.
+  if (millis() - _sensorTickMs < 1000) {
+    delay(10);
+    return;
+  }
+  _sensorTickMs = millis();
 
+  // DS18B20 ──────────────────────────────────────────────────────────────────
+  if (is_abilitato_ds18b20() && is_inizializzato_ds18b20()) {
+    RisultatoValidazione risultato = read_temperature_ds18b20();
     if (risultato.valido) {
-      Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
-      inviaDatoSensore("ds18b20", &risultato);
-    } else {
+      aggiornaSnapshotSensore("ds18b20", &risultato, false, "Lettura locale");
+      if (should_send_ds18b20(risultato.valorePulito)) {
+        Serial.println("\n[DS18B20] INVIO TEMPERATURA INTERNA");
+        Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
+        gestisciRisultatoSensore(risultato);
+        if (inviaDatoSensore("ds18b20", &risultato)) {
+          mark_sent_ds18b20(risultato.valorePulito);
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_ds18b20, get_intervallo_ds18b20())) {
+      Serial.println("\n[DS18B20] LETTURA NON VALIDA");
+      gestisciRisultatoSensore(risultato);
       inviaStatoSensoreRuntime(
         "ds18b20",
         "LETTURA_NON_VALIDA",
@@ -1014,20 +1053,27 @@ void loop() {
         risultato.valorePulito
       );
       aggiornaSnapshotSensore("ds18b20", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
     }
-    Serial.println("---\n");
   }
 
-  // SHT21 - UMIDITA
-  if (is_abilitato_humidity_sht21() && intervalloTrascorso(ultimoCheck_sht21_humidity, get_intervallo_humidity_sht21())) {
-    Serial.println("\n[SHT21] LETTURA UMIDITA");
+  // SHT21 - UMIDITA ─────────────────────────────────────────────────────────
+  if (is_abilitato_humidity_sht21()) {
     RisultatoValidazione risultato = read_humidity_sht21();
-    gestisciRisultatoSensore(risultato);
-
     if (risultato.valido) {
-      Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" %");
-      inviaDatoSensore("sht21_humidity", &risultato);
-    } else {
+      aggiornaSnapshotSensore("sht21_humidity", &risultato, false, "Lettura locale");
+      if (should_send_humidity_sht21(risultato.valorePulito)) {
+        Serial.println("\n[SHT21] INVIO UMIDITA");
+        Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" %");
+        gestisciRisultatoSensore(risultato);
+        if (inviaDatoSensore("sht21_humidity", &risultato)) {
+          mark_sent_humidity_sht21(risultato.valorePulito);
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_sht21_humidity, get_intervallo_humidity_sht21())) {
+      Serial.println("\n[SHT21] UMIDITA NON VALIDA");
+      gestisciRisultatoSensore(risultato);
       inviaStatoSensoreRuntime(
         "sht21_humidity",
         "LETTURA_NON_VALIDA",
@@ -1037,20 +1083,27 @@ void loop() {
         risultato.valorePulito
       );
       aggiornaSnapshotSensore("sht21_humidity", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
     }
-    Serial.println("---\n");
   }
 
-  // SHT21 - TEMPERATURA AMBIENTE
-  if (is_abilitato_temperature_sht21() && intervalloTrascorso(ultimoCheck_sht21_temperature, get_intervallo_temperature_sht21())) {
-    Serial.println("\n[SHT21] LETTURA TEMPERATURA AMBIENTE");
+  // SHT21 - TEMPERATURA AMBIENTE ────────────────────────────────────────────
+  if (is_abilitato_temperature_sht21()) {
     RisultatoValidazione risultato = read_temperature_sht21();
-    gestisciRisultatoSensore(risultato);
-
     if (risultato.valido) {
-      Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
-      inviaDatoSensore("sht21_temperature", &risultato);
-    } else {
+      aggiornaSnapshotSensore("sht21_temperature", &risultato, false, "Lettura locale");
+      if (should_send_temperature_sht21(risultato.valorePulito)) {
+        Serial.println("\n[SHT21] INVIO TEMPERATURA AMBIENTE");
+        Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" C");
+        gestisciRisultatoSensore(risultato);
+        if (inviaDatoSensore("sht21_temperature", &risultato)) {
+          mark_sent_temperature_sht21(risultato.valorePulito);
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_sht21_temperature, get_intervallo_temperature_sht21())) {
+      Serial.println("\n[SHT21] TEMPERATURA AMBIENTE NON VALIDA");
+      gestisciRisultatoSensore(risultato);
       inviaStatoSensoreRuntime(
         "sht21_temperature",
         "LETTURA_NON_VALIDA",
@@ -1060,20 +1113,27 @@ void loop() {
         risultato.valorePulito
       );
       aggiornaSnapshotSensore("sht21_temperature", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
     }
-    Serial.println("---\n");
   }
 
-  // HX711 - PESO
-  if (is_abilitato_hx711() && intervalloTrascorso(ultimoCheck_hx711, get_intervallo_hx711())) {
-    Serial.println("\n[HX711] LETTURA PESO");
+  // HX711 - PESO ────────────────────────────────────────────────────────────
+  if (is_abilitato_hx711()) {
     RisultatoValidazione risultato = read_weight_hx711();
-    gestisciRisultatoSensore(risultato);
-
     if (risultato.valido) {
-      Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" kg");
-      inviaDatoSensore("hx711", &risultato);
-    } else {
+      aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura locale");
+      if (should_send_hx711(risultato.valorePulito)) {
+        Serial.println("\n[HX711] INVIO PESO");
+        Serial.print("  -> Valore: "); Serial.print(risultato.valorePulito); Serial.println(" kg");
+        gestisciRisultatoSensore(risultato);
+        if (inviaDatoSensore("hx711", &risultato)) {
+          mark_sent_hx711(risultato.valorePulito);
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_hx711, get_intervallo_hx711())) {
+      Serial.println("\n[HX711] LETTURA PESO NON VALIDA");
+      gestisciRisultatoSensore(risultato);
       inviaStatoSensoreRuntime(
         "hx711",
         "LETTURA_NON_VALIDA",
@@ -1083,11 +1143,9 @@ void loop() {
         risultato.valorePulito
       );
       aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
     }
-    Serial.println("---\n");
   }
-
-  delay(100);
 }
 
 // ============================================================================

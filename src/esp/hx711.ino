@@ -35,6 +35,11 @@ static bool _hx711_inizializzato = false;
 static bool _hx711_tarato = false;
 static unsigned long _last_read_time = 0;
 
+// Campionamento adattivo
+static float _hx711_delta = 0.05f;          // kg — soglia variazione per invio anticipato
+static float _hx711_lastSentValue = NAN;
+static unsigned long _hx711_lastSentTime = 0;
+
 // Parametri calibrazione
 static float _hx711_calibration_factor = 696.0f;  // Valore di calibrazione
 
@@ -104,16 +109,20 @@ void init_hx711(SensorConfig* config) {
   }
 
   if (config != NULL) {
-    _hx711_sogliaMin = config->sogliaMin;
-    _hx711_sogliaMax = config->sogliaMax;
+    _hx711_sogliaMin  = config->sogliaMin;
+    _hx711_sogliaMax  = config->sogliaMax;
     _hx711_intervallo = config->intervallo;
-    _hx711_abilitato = config->abilitato;
+    _hx711_abilitato  = config->abilitato;
+    _hx711_delta      = config->deltaMinimo;
   }
+  _hx711_lastSentTime  = 0;   // forza primo campione
+  _hx711_lastSentValue = NAN;
 
   Serial.println("  --- HX711 configurato ---");
-  Serial.print("    Soglia MIN: "); Serial.print(_hx711_sogliaMin); Serial.println(" kg");
-  Serial.print("    Soglia MAX: "); Serial.print(_hx711_sogliaMax); Serial.println(" kg");
+  Serial.print("    Soglia MIN: "); Serial.print(_hx711_sogliaMin);  Serial.println(" kg");
+  Serial.print("    Soglia MAX: "); Serial.print(_hx711_sogliaMax);  Serial.println(" kg");
   Serial.print("    Intervallo: "); Serial.print(_hx711_intervallo / 1000); Serial.println(" sec");
+  Serial.print("    Delta min:  "); Serial.print(_hx711_delta);       Serial.println(" kg");
   Serial.print("    Abilitato: "); Serial.println(_hx711_abilitato ? "SI" : "NO");
   Serial.println();
 }
@@ -239,6 +248,23 @@ RisultatoValidazione read_weight_hx711() {
 
   _last_read_time = millis();
   return risultato;
+}
+
+// ============================================================================
+// CAMPIONAMENTO ADATTIVO - should_send / mark_sent
+// ============================================================================
+bool should_send_hx711(float nuovoValore) {
+  if (_hx711_lastSentTime == 0) return true;
+  if (millis() - _hx711_lastSentTime >= _hx711_intervallo) return true;
+  if (_hx711_delta > 0.0f && !isnan(_hx711_lastSentValue)) {
+    if (fabs(nuovoValore - _hx711_lastSentValue) >= _hx711_delta) return true;
+  }
+  return false;
+}
+
+void mark_sent_hx711(float valoreInviato) {
+  _hx711_lastSentValue = valoreInviato;
+  _hx711_lastSentTime  = millis();
 }
 
 // ============================================================================

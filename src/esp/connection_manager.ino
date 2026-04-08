@@ -154,13 +154,13 @@ ConfigData fetch_sensor_config(const char* macAddress) {
   ConfigData response;
   response.success = false;
 
-  // Valori default (sogliaMin, sogliaMax, intervallo, abilitato, sensorId)
+  // Valori default (sogliaMin, sogliaMax, intervallo, abilitato, sensorId, deltaMinimo)
   // SensorId vuoto se la configurazione non e' disponibile:
   // evita POST con FK invalida su ril_sea_id.
-  response.ds18b20 = {30.0f, 37.0f, 360000, true, ""};
-  response.sht21_humidity = {40.0f, 70.0f, 360000, true, ""};
-  response.sht21_temperature = {10.0f, 45.0f, 360000, true, ""};
-  response.hx711 = {10.0f, 80.0f, 60000, true, ""};
+  response.ds18b20           = {30.0f, 37.0f, 360000, true, "", 0.5f};
+  response.sht21_humidity    = {40.0f, 70.0f, 360000, true, "", 2.0f};
+  response.sht21_temperature = {10.0f, 45.0f, 360000, true, "", 0.5f};
+  response.hx711             = {10.0f, 80.0f,  60000, true, "", 0.05f};
   response.calibrationFactor = 2280.0f;
   response.calibrationOffset = 50000;
 
@@ -205,40 +205,44 @@ ConfigData fetch_sensor_config(const char* macAddress) {
 
       // DS18B20
       if (config.containsKey("ds18b20")) {
-        response.ds18b20.sogliaMin = config["ds18b20"]["sea_min"] | 30.0f;
-        response.ds18b20.sogliaMax = config["ds18b20"]["sea_max"] | 37.0f;
-        response.ds18b20.intervallo = config["ds18b20"]["intervallo"] | 360000UL;
-        response.ds18b20.abilitato = config["ds18b20"]["sea_stato"] | true;
+        response.ds18b20.sogliaMin   = config["ds18b20"]["sea_min"]    | 30.0f;
+        response.ds18b20.sogliaMax   = config["ds18b20"]["sea_max"]    | 37.0f;
+        response.ds18b20.intervallo  = config["ds18b20"]["intervallo"] | 360000UL;
+        response.ds18b20.abilitato   = config["ds18b20"]["sea_stato"]  | true;
+        response.ds18b20.deltaMinimo = config["ds18b20"]["delta"]      | 0.5f;
         const char* id = config["ds18b20"]["_id"] | "";
         strncpy(response.ds18b20.sensorId, id, sizeof(response.ds18b20.sensorId) - 1);
       }
 
       // SHT21 Humidity
       if (config.containsKey("sht21_humidity")) {
-        response.sht21_humidity.sogliaMin = config["sht21_humidity"]["sea_min"] | 40.0f;
-        response.sht21_humidity.sogliaMax = config["sht21_humidity"]["sea_max"] | 70.0f;
-        response.sht21_humidity.intervallo = config["sht21_humidity"]["intervallo"] | 360000UL;
-        response.sht21_humidity.abilitato = config["sht21_humidity"]["sea_stato"] | true;
+        response.sht21_humidity.sogliaMin   = config["sht21_humidity"]["sea_min"]    | 40.0f;
+        response.sht21_humidity.sogliaMax   = config["sht21_humidity"]["sea_max"]    | 70.0f;
+        response.sht21_humidity.intervallo  = config["sht21_humidity"]["intervallo"] | 360000UL;
+        response.sht21_humidity.abilitato   = config["sht21_humidity"]["sea_stato"]  | true;
+        response.sht21_humidity.deltaMinimo = config["sht21_humidity"]["delta"]      | 2.0f;
         const char* id = config["sht21_humidity"]["_id"] | "";
         strncpy(response.sht21_humidity.sensorId, id, sizeof(response.sht21_humidity.sensorId) - 1);
       }
 
       // SHT21 Temperature
       if (config.containsKey("sht21_temperature")) {
-        response.sht21_temperature.sogliaMin = config["sht21_temperature"]["sea_min"] | 10.0f;
-        response.sht21_temperature.sogliaMax = config["sht21_temperature"]["sea_max"] | 45.0f;
-        response.sht21_temperature.intervallo = config["sht21_temperature"]["intervallo"] | 360000UL;
-        response.sht21_temperature.abilitato = config["sht21_temperature"]["sea_stato"] | true;
+        response.sht21_temperature.sogliaMin   = config["sht21_temperature"]["sea_min"]    | 10.0f;
+        response.sht21_temperature.sogliaMax   = config["sht21_temperature"]["sea_max"]    | 45.0f;
+        response.sht21_temperature.intervallo  = config["sht21_temperature"]["intervallo"] | 360000UL;
+        response.sht21_temperature.abilitato   = config["sht21_temperature"]["sea_stato"]  | true;
+        response.sht21_temperature.deltaMinimo = config["sht21_temperature"]["delta"]      | 0.5f;
         const char* id = config["sht21_temperature"]["_id"] | "";
         strncpy(response.sht21_temperature.sensorId, id, sizeof(response.sht21_temperature.sensorId) - 1);
       }
 
       // HX711
       if (config.containsKey("hx711")) {
-        response.hx711.sogliaMin = config["hx711"]["sea_min"] | 10.0f;
-        response.hx711.sogliaMax = config["hx711"]["sea_max"] | 80.0f;
-        response.hx711.intervallo = config["hx711"]["intervallo"] | 10800000UL;
-        response.hx711.abilitato = config["hx711"]["sea_stato"] | true;
+        response.hx711.sogliaMin   = config["hx711"]["sea_min"]    | 10.0f;
+        response.hx711.sogliaMax   = config["hx711"]["sea_max"]    | 80.0f;
+        response.hx711.intervallo  = config["hx711"]["intervallo"] | 10800000UL;
+        response.hx711.abilitato   = config["hx711"]["sea_stato"]  | true;
+        response.hx711.deltaMinimo = config["hx711"]["delta"]      | 0.05f;
         const char* id = config["hx711"]["_id"] | "";
         strncpy(response.hx711.sensorId, id, sizeof(response.hx711.sensorId) - 1);
       }

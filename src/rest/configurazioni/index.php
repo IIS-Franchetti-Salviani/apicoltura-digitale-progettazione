@@ -118,7 +118,20 @@ function buildFirmwareConfigByMac($conn, $baseUrl, $macAddress) {
         "link" => "$baseUrl/configurazioni/{$cfg['cfs_id']}"
     ];
 
-    $sqlSens = "SELECT sa.sea_id, sa.sea_min, sa.sea_max, sa.sea_intervallo_ms, sa.sea_stato, t.tip_codice
+    // Verifica se le colonne HX711 (sea_cal_factor, sea_tare_offset) esistono
+    // per essere retro-compatibili con DB non ancora migrati.
+    $hasCalFactor = false;
+    $hasTareOffset = false;
+    $resChkCal = $conn->query("SHOW COLUMNS FROM SensoreArnia LIKE 'sea_cal_factor'");
+    if ($resChkCal && $resChkCal->num_rows > 0) $hasCalFactor = true;
+    $resChkTare = $conn->query("SHOW COLUMNS FROM SensoreArnia LIKE 'sea_tare_offset'");
+    if ($resChkTare && $resChkTare->num_rows > 0) $hasTareOffset = true;
+
+    $selectCols = "sa.sea_id, sa.sea_min, sa.sea_max, sa.sea_intervallo_ms, sa.sea_stato, t.tip_codice";
+    if ($hasCalFactor)  $selectCols .= ", sa.sea_cal_factor";
+    if ($hasTareOffset) $selectCols .= ", sa.sea_tare_offset";
+
+    $sqlSens = "SELECT $selectCols
                 FROM SensoreArnia sa
                 JOIN TipoRilevazione t ON t.tip_id = sa.sea_tip_id
                 WHERE sa.sea_arn_id = $arnId";
@@ -137,6 +150,18 @@ function buildFirmwareConfigByMac($conn, $baseUrl, $macAddress) {
             "intervallo" => (int)$row['sea_intervallo_ms'],
             "sea_stato" => (bool)$row['sea_stato']
         ];
+
+        // Per il sensore peso HX711 esponi anche i campi di calibrazione
+        // persistente (letti dal firmware in init_hx711 via connection_manager).
+        if ($key === 'hx711') {
+            if ($hasCalFactor && isset($row['sea_cal_factor']) && $row['sea_cal_factor'] !== null) {
+                $output[$key]['cal_factor'] = (float)$row['sea_cal_factor'];
+            }
+            if ($hasTareOffset && isset($row['sea_tare_offset']) && $row['sea_tare_offset'] !== null) {
+                // BIGINT: usa int, non float, per preservare i bit
+                $output[$key]['tare_offset'] = (int)$row['sea_tare_offset'];
+            }
+        }
     }
 
     return $output;
@@ -354,6 +379,111 @@ elseif ($method === 'PUT') {
 
         header('Content-Type: application/json');
         echo json_encode(["messaggio" => "Configurazione aggiornata", "link" => "$baseUrl/configurazioni/$cfgId"]);
+    } else {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(["errore" => $conn->error]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /configurazioni/{sea_id}
+// ---------------------------------------------------------------------------
+// Usato dal firmware ESP32 (connection_manager.ino -> save_hx711_calibration)
+// per persistere su server la calibrazione HX711 dopo una tara manuale.
+// A dispetto del path, l'ID qui e' il sea_id del SensoreArnia di tipo hx711
+// (cosi' come lo riceve nel payload GET /configurazioni?q={"macAddress":...})
+// e NON il cfs_id della ConfigurazioneScheda.
+// Campi accettati nel body:
+//   - sea_cal_factor  (DOUBLE)
+//   - sea_tare_offset (BIGINT)
+// Esempio:
+//   PATCH /configurazioni/42
+//   { "sea_cal_factor": 696.0, "sea_tare_offset": 123456 }
+// ---------------------------------------------------------------------------
+elseif ($method === 'PATCH') {
+    if (!isset($_GET['configurazioneId'])) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(["errore" => "Parametro id mancante nel path"]);
+        $conn->close();
+        exit;
+    }
+
+    $seaId = (int)$_GET['configurazioneId'];
+    $data = getRequestJsonBody();
+    if (!is_array($data)) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(["errore" => "Body JSON non valido"]);
+        $conn->close();
+        exit;
+    }
+
+    // Verifica che il sensore esista
+    $resSea = $conn->query("SELECT sea_id FROM SensoreArnia WHERE sea_id = $seaId LIMIT 1");
+    if (!$resSea || $resSea->num_rows === 0) {
+        http_response_code(404);
+        header('Content-Type: application/json');
+        echo json_encode(["errore" => "SensoreArnia $seaId non trovato"]);
+        $conn->close();
+        exit;
+    }
+
+    // Verifica esistenza colonne (retro-compatibilita' con DB non migrati)
+    $resChkCal = $conn->query("SHOW COLUMNS FROM SensoreArnia LIKE 'sea_cal_factor'");
+    $hasCalFactor = ($resChkCal && $resChkCal->num_rows > 0);
+    $resChkTare = $conn->query("SHOW COLUMNS FROM SensoreArnia LIKE 'sea_tare_offset'");
+    $hasTareOffset = ($resChkTare && $resChkTare->num_rows > 0);
+
+    if (!$hasCalFactor && !$hasTareOffset) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode([
+            "errore" => "Schema DB obsoleto: esegui migrate_hx711_calibration.sql"
+        ]);
+        $conn->close();
+        exit;
+    }
+
+    $updates = [];
+    if ($hasCalFactor && array_key_exists('sea_cal_factor', $data)) {
+        $cal = (float)$data['sea_cal_factor'];
+        if (is_finite($cal)) {
+            $updates[] = "sea_cal_factor = $cal";
+        }
+    }
+    if ($hasTareOffset && array_key_exists('sea_tare_offset', $data)) {
+        // BIGINT: usa intval per evitare notazione esponenziale
+        $tare = (int)$data['sea_tare_offset'];
+        $updates[] = "sea_tare_offset = $tare";
+    }
+
+    if (empty($updates)) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode([
+            "errore" => "Nessun campo aggiornabile nel body",
+            "campi_ammessi" => ["sea_cal_factor", "sea_tare_offset"]
+        ]);
+        $conn->close();
+        exit;
+    }
+
+    $setClause = implode(', ', $updates);
+    $sql = "UPDATE SensoreArnia SET $setClause WHERE sea_id = $seaId";
+
+    if ($conn->query($sql)) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            "messaggio" => "Calibrazione HX711 aggiornata",
+            "sea_id" => $seaId,
+            "campi_aggiornati" => array_keys(array_intersect_key(
+                $data,
+                array_flip(['sea_cal_factor', 'sea_tare_offset'])
+            )),
+            "link" => "$baseUrl/sensoriarnia/$seaId"
+        ]);
     } else {
         http_response_code(500);
         header('Content-Type: application/json');

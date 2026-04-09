@@ -7,7 +7,47 @@
 
 #include <HX711_ADC.h>
 #include <esp_task_wdt.h>
+#include <Preferences.h>
 #include "SensorValidation.h"
+
+// ============================================================================
+// PERSISTENZA LOCALE NVS (flash ESP32)
+// ============================================================================
+// Usata come cache/fallback per la calibrazione HX711. La source-of-truth
+// resta il server (tabella SensoreArnia), ma se il server non e'
+// raggiungibile o non supporta ancora i campi sea_cal_factor/sea_tare_offset,
+// la tara viene comunque preservata fra reboot grazie a NVS.
+//   Namespace: "hx711"
+//   Chiavi:    "cal_factor" (float), "tare_offset" (int64)
+// ============================================================================
+static Preferences _hx711_prefs;
+static const char* HX711_NVS_NS       = "hx711";
+static const char* HX711_NVS_KEY_CAL  = "cal_factor";
+static const char* HX711_NVS_KEY_TARE = "tare_offset";
+
+static void nvs_save_hx711_calibration(float calFactor, long tareOffset) {
+  if (_hx711_prefs.begin(HX711_NVS_NS, false)) {
+    _hx711_prefs.putFloat(HX711_NVS_KEY_CAL, calFactor);
+    _hx711_prefs.putLong(HX711_NVS_KEY_TARE, tareOffset);
+    _hx711_prefs.end();
+    Serial.print("  [NVS] Calibrazione HX711 salvata: cal=");
+    Serial.print(calFactor);
+    Serial.print(" tare=");
+    Serial.println(tareOffset);
+  } else {
+    Serial.println("  ! [NVS] Impossibile aprire namespace hx711 in scrittura");
+  }
+}
+
+static bool nvs_load_hx711_calibration(float* outCal, long* outTare) {
+  if (!_hx711_prefs.begin(HX711_NVS_NS, true)) return false;
+  bool hasCal  = _hx711_prefs.isKey(HX711_NVS_KEY_CAL);
+  bool hasTare = _hx711_prefs.isKey(HX711_NVS_KEY_TARE);
+  if (hasCal)  *outCal  = _hx711_prefs.getFloat(HX711_NVS_KEY_CAL, 696.0f);
+  if (hasTare) *outTare = _hx711_prefs.getLong(HX711_NVS_KEY_TARE, 0L);
+  _hx711_prefs.end();
+  return hasTare;  // ritorna true solo se abbiamo una tara salvata
+}
 
 // ============================================================================
 // CONFIGURAZIONE HARDWARE
@@ -93,17 +133,33 @@ void setup_hx711() {
     return;
   }
 
-  // Applica il fattore di calibrazione di fallback finche' init_hx711
-  // non sovrascrivera' con il valore dal server.
-  LoadCell.setCalFactor(_hx711_calibration_factor);
+  // Prova a caricare la calibrazione dalla flash NVS (persistenza locale).
+  // Se esiste, l'HX711 e' pronto a leggere subito, senza dover aspettare
+  // la config dal server (che arrivera' comunque dopo e potra' sovrascrivere).
+  float nvsCal = 696.0f;
+  long  nvsTare = 0L;
+  bool haveNvsTare = nvs_load_hx711_calibration(&nvsCal, &nvsTare);
 
-  _hx711_inizializzato = true;
-  _hx711_tarato = false;          // Non siamo ancora tarati: attendiamo init_hx711
-  _hx711_calibrazione_valida = false;
-
-  Serial.println("  + HX711 inizializzato (in attesa di calibrazione dal server)");
-  Serial.print("    Fallback cal factor: ");
-  Serial.println(_hx711_calibration_factor);
+  if (haveNvsTare) {
+    _hx711_calibration_factor = nvsCal;
+    _hx711_tare_offset = nvsTare;
+    LoadCell.setCalFactor(_hx711_calibration_factor);
+    LoadCell.setTareOffset(_hx711_tare_offset);
+    _hx711_inizializzato = true;
+    _hx711_tarato = true;
+    _hx711_calibrazione_valida = true;
+    Serial.println("  + HX711 inizializzato con calibrazione da NVS");
+    Serial.print("    Cal factor (NVS):  "); Serial.println(_hx711_calibration_factor);
+    Serial.print("    Tare offset (NVS): "); Serial.println(_hx711_tare_offset);
+  } else {
+    LoadCell.setCalFactor(_hx711_calibration_factor);
+    _hx711_inizializzato = true;
+    _hx711_tarato = false;
+    _hx711_calibrazione_valida = false;
+    Serial.println("  + HX711 inizializzato (in attesa di calibrazione dal server o tara manuale)");
+    Serial.print("    Fallback cal factor: ");
+    Serial.println(_hx711_calibration_factor);
+  }
   Serial.println();
 }
 
@@ -123,26 +179,35 @@ void init_hx711(SensorConfig* config) {
     _hx711_abilitato  = config->abilitato;
     _hx711_delta      = config->deltaMinimo;
 
-    // Applica calibrazione persistente dal server.
-    if (config->calFactor > 0.0f && !isnan(config->calFactor) && !isinf(config->calFactor)) {
+    // --- Calibrazione: server e' source-of-truth SE fornisce valori validi ---
+    // Altrimenti manteniamo quanto gia' caricato da NVS in setup_hx711().
+    bool serverCalValid  = (config->calFactor > 0.0f &&
+                            !isnan(config->calFactor) &&
+                            !isinf(config->calFactor));
+    bool serverTareValid = (config->tareOffset != 0L);
+
+    if (serverCalValid) {
       _hx711_calibration_factor = config->calFactor;
       LoadCell.setCalFactor(_hx711_calibration_factor);
     }
-    // Il tare offset e' valido solo se diverso da 0 (0 = "tara mai eseguita").
-    // L'apicoltore deve eseguire la tara iniziale dalla dashboard con
-    // arnia vuota sulla bilancia.
-    if (config->tareOffset != 0L) {
+    if (serverTareValid) {
       _hx711_tare_offset = config->tareOffset;
       LoadCell.setTareOffset(_hx711_tare_offset);
       _hx711_tarato = true;
       _hx711_calibrazione_valida = true;
-    } else {
-      _hx711_tarato = false;
-      _hx711_calibrazione_valida = false;
-      Serial.println("  ! ATTENZIONE: tare_offset=0 -> tara non ancora eseguita");
-      Serial.println("    Letture peso non affidabili finche' non esegui la tara");
-      Serial.println("    dalla dashboard (http://<ip_esp>/hx711/tare) con");
-      Serial.println("    arnia VUOTA sulla bilancia.");
+    }
+
+    // Se il server ci ha dato valori, aggiorniamo anche la cache NVS
+    // (riallineamento dopo calibrazione fatta da un altro dispositivo).
+    if (serverCalValid || serverTareValid) {
+      nvs_save_hx711_calibration(_hx711_calibration_factor, _hx711_tare_offset);
+    }
+
+    if (!_hx711_calibrazione_valida) {
+      Serial.println("  ! ATTENZIONE: HX711 non calibrato");
+      Serial.println("    Ne' il server ne' la flash NVS contengono un tare_offset valido.");
+      Serial.println("    Esegui la tara dalla dashboard con arnia VUOTA sulla bilancia:");
+      Serial.println("    http://<ip_esp>/hx711/tare");
     }
   }
   _hx711_lastSentTime  = 0;   // forza primo campione
@@ -261,6 +326,12 @@ bool tare_hx711() {
   _hx711_tare_offset = LoadCell.getTareOffset();
   _hx711_tarato = true;
   _hx711_calibrazione_valida = true;
+
+  // Persisti SUBITO in NVS: questa scrittura e' locale, non dipende dal
+  // server, dal WiFi o dal PHP. La tara sopravvivera' a reboot, black-out
+  // e OTA anche se il PATCH al server fallisce.
+  nvs_save_hx711_calibration(_hx711_calibration_factor, _hx711_tare_offset);
+
   Serial.print("  + TARA COMPLETATA in ");
   Serial.print(tareDuration);
   Serial.println(" ms");

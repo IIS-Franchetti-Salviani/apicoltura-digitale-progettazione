@@ -750,10 +750,85 @@ bool leggiMacAddressDispositivo(char* outMac, size_t outSize) {
 }
 
 // ============================================================================
-// GESTIONE WI-FI CON WiFiMulti
+// GESTIONE WI-FI ROBUSTA (WiFiMulti + eventi + back-off + cold reset)
 // ============================================================================
+// Strategia:
+//  1) WiFi.persistent(false)     -> evita scritture SSID/pw in flash ad ogni
+//                                   begin() (usura flash).
+//  2) WiFi.setAutoReconnect(true) -> attiva auto-reconnect del core; non
+//                                   copre tutti i reason_code (vedi issue
+//                                   arduino-esp32 #7210) ma fa la maggior
+//                                   parte del lavoro in modo trasparente.
+//  3) WiFi.setSleep(false)       -> modem sempre attivo: riconnessioni piu'
+//                                   reattive (ESP32-CAM e' alimentata).
+//  4) WiFi.onEvent(...)          -> reazione immediata all'evento
+//                                   ARDUINO_EVENT_WIFI_STA_DISCONNECTED che
+//                                   forza una nuova wifiMulti.run() e logga
+//                                   il reason_code per diagnostica.
+//  5) Back-off esponenziale      -> quando i tentativi falliscono, il check
+//                                   raddoppia l'intervallo (10s -> 60s cap).
+//  6) Cold reset radio           -> dopo N fallimenti consecutivi fa
+//                                   WiFi.disconnect(true,true) + MODE_OFF +
+//                                   MODE_STA per recuperare stati "stuck"
+//                                   (es. 4way handshake timeout, assoc expire).
+// ============================================================================
+
+// --- Parametri back-off / reset ---
+static const uint32_t WIFI_CHECK_BASE_MS        = 10000UL;   // 10 s
+static const uint32_t WIFI_CHECK_MAX_MS         = 60000UL;   // 60 s
+static const uint8_t  WIFI_COLD_RESET_THRESHOLD = 5;         // tentativi falliti consecutivi
+static uint32_t _wifiCheckIntervalMs = WIFI_CHECK_BASE_MS;
+static uint8_t  _wifiFailCount       = 0;
+static volatile bool _wifiDropPending = false;  // set da ISR/event, servito nel loop
+
+// --- Handler eventi Wi-Fi ---
+// ATTENZIONE: gli handler vengono eseguiti in un task di sistema; evitare
+// Serial.print lunghi e qualunque chiamata bloccante (no HTTP, no NTP, no
+// begin()). Ci limitiamo a loggare il reason_code e a segnalare al loop
+// principale che deve fare la riconnessione.
+static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_START:
+      Serial.println("[WiFi evt] STA_START");
+      break;
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      Serial.println("[WiFi evt] STA_CONNECTED");
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.print("[WiFi evt] GOT_IP: ");
+      Serial.println(WiFi.localIP());
+      wifiConnesso = true;
+      _wifiFailCount = 0;
+      _wifiCheckIntervalMs = WIFI_CHECK_BASE_MS;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      Serial.println("[WiFi evt] LOST_IP");
+      _wifiDropPending = true;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.print("[WiFi evt] DISCONNECTED reason=");
+      Serial.println(info.wifi_sta_disconnected.reason);
+      wifiConnesso = false;
+      _wifiDropPending = true;
+      break;
+    default:
+      break;
+  }
+}
+
 void initWiFi() {
+  // Configurazione radio PRIMA di qualunque begin():
+  // persistent(false) -> no flash wear
+  // setAutoReconnect -> auto-reconnect interno per la maggior parte dei casi
+  // setSleep(false)  -> modem sempre attivo, riconnessioni piu' rapide
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
+
+  // Registra l'handler eventi UNA volta sola
+  WiFi.onEvent(onWiFiEvent);
+
   delay(50);
 
   bool macValido = leggiMacAddressDispositivo(deviceMacAddress, sizeof(deviceMacAddress));
@@ -773,6 +848,25 @@ void initWiFi() {
   Serial.println();
 }
 
+// Cold-reset della radio: ultima spiaggia quando auto-reconnect + wifiMulti
+// falliscono ripetutamente (tipicamente bug di stato nello stack Wi-Fi o
+// l'AP che ha dis-autenticato attivamente il client).
+static void wifiColdReset() {
+  Serial.println("  [WiFi] COLD RESET radio in corso...");
+  esp_task_wdt_reset();
+  WiFi.disconnect(true, true);   // true=wifioff, true=erase config RAM
+  delay(200);
+  WiFi.mode(WIFI_OFF);
+  delay(500);
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
+  delay(200);
+  esp_task_wdt_reset();
+  Serial.println("  [WiFi] Cold reset completato, nuovo tentativo associazione");
+}
+
 bool connectWiFi() {
   Serial.println("  Connessione alla rete migliore disponibile...");
 
@@ -786,9 +880,11 @@ bool connectWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnesso = true;
+    _wifiFailCount = 0;
+    _wifiCheckIntervalMs = WIFI_CHECK_BASE_MS;
     Serial.println(" OK");
     Serial.print("    Connesso a: ");
-    Serial.println(WiFi. SSID());
+    Serial.println(WiFi.SSID());
     Serial.print("    IP: ");
     Serial.println(WiFi.localIP());
     Serial.print("    RSSI: ");
@@ -810,26 +906,66 @@ bool isWiFiConnected() {
 }
 
 void checkWiFiConnection() {
-  if (intervalloTrascorso(ultimoCheckWiFi, 10000)) {
+  // Se un evento ha segnalato drop, servi subito (niente attesa dell'intervallo)
+  bool forceNow = _wifiDropPending;
+  if (!forceNow && !intervalloTrascorso(ultimoCheckWiFi, _wifiCheckIntervalMs)) {
+    return;
+  }
+  _wifiDropPending = false;
 
-    if (wifiMulti.run() != WL_CONNECTED) {
-      Serial.println("\n!  WiFi disconnesso, riconnessione automatica...");
-      wifiConnesso = false;
-    } else {
-      if (!wifiConnesso) {
-        Serial.println("\n✓ WiFi riconnesso!");
-        Serial.print("  Connesso a: ");
-        Serial.println(WiFi.SSID());
-        Serial.print("  IP: ");
-        Serial.println(WiFi.localIP());
-        Serial.print("  RSSI: ");
-        Serial.print(WiFi.RSSI());
-        Serial.println(" dBm\n");
-        sincronizzaTempoNtp(true);
-      }
-      wifiConnesso = true;
-      sincronizzaTempoNtp(false);
+  if (WiFi.status() == WL_CONNECTED) {
+    // Tutto OK: se arrivavamo da uno stato di fallimento, logga e resetta back-off
+    if (!wifiConnesso) {
+      Serial.println("\n+ WiFi riconnesso!");
+      Serial.print("  Connesso a: "); Serial.println(WiFi.SSID());
+      Serial.print("  IP: ");         Serial.println(WiFi.localIP());
+      Serial.print("  RSSI: ");       Serial.print(WiFi.RSSI());
+      Serial.println(" dBm\n");
+      sincronizzaTempoNtp(true);
     }
+    wifiConnesso = true;
+    _wifiFailCount = 0;
+    _wifiCheckIntervalMs = WIFI_CHECK_BASE_MS;
+    sincronizzaTempoNtp(false);  // resync periodico soft
+    return;
+  }
+
+  // --- Stato disconnesso: tenta riconnessione ---
+  wifiConnesso = false;
+  Serial.print("\n! WiFi disconnesso (fail=");
+  Serial.print(_wifiFailCount);
+  Serial.print(", next=");
+  Serial.print(_wifiCheckIntervalMs / 1000);
+  Serial.println("s), riconnessione...");
+
+  // Dopo N fallimenti consecutivi fai un cold reset della radio:
+  // risolve stati bloccati tipici di ASSOC_EXPIRE / HANDSHAKE_TIMEOUT
+  // che l'auto-reconnect interno non gestisce.
+  if (_wifiFailCount >= WIFI_COLD_RESET_THRESHOLD) {
+    wifiColdReset();
+    _wifiFailCount = 0;  // resetta contatore, ricomincia il ciclo
+  }
+
+  // Prova la rete migliore tramite wifiMulti (breve, non bloccante a lungo)
+  esp_task_wdt_reset();
+  uint8_t res = wifiMulti.run(3000);  // timeout 3s per singolo tentativo
+  esp_task_wdt_reset();
+
+  if (res == WL_CONNECTED) {
+    // L'evento GOT_IP chiudera' il ciclo, ma aggiorniamo subito lo stato
+    wifiConnesso = true;
+    _wifiFailCount = 0;
+    _wifiCheckIntervalMs = WIFI_CHECK_BASE_MS;
+    Serial.println("  + riconnessione OK");
+  } else {
+    _wifiFailCount++;
+    // Back-off esponenziale con cap
+    uint32_t next = _wifiCheckIntervalMs * 2;
+    if (next > WIFI_CHECK_MAX_MS) next = WIFI_CHECK_MAX_MS;
+    _wifiCheckIntervalMs = next;
+    Serial.print("  ! riconnessione fallita, prossimo tentativo fra ");
+    Serial.print(_wifiCheckIntervalMs / 1000);
+    Serial.println("s");
   }
 }
 
@@ -1220,38 +1356,4 @@ void loop() {
         gestisciRisultatoSensore(risultato);
         if (inviaDatoSensore("hx711", &risultato)) {
           mark_sent_hx711(risultato.valorePulito);
-        }
-        Serial.println("---\n");
-      }
-    } else if (intervalloTrascorso(ultimoCheck_hx711, get_intervallo_hx711())) {
-      Serial.println("\n[HX711] LETTURA PESO NON VALIDA");
-      gestisciRisultatoSensore(risultato);
-      inviaStatoSensoreRuntime(
-        "hx711",
-        "LETTURA_NON_VALIDA",
-        "VALIDAZIONE_FALLITA",
-        risultato.messaggioErrore,
-        risultato.codiceErrore,
-        risultato.valorePulito
-      );
-      aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura non valida");
-      Serial.println("---\n");
-    }
-  }
-}
-
-// ============================================================================
-// UTILITY
-// ============================================================================
-void stampaStatistiche() {
-  Serial.println("\n--- STATISTICHE ---");
-  Serial.print("MAC:  "); Serial.println(deviceMacAddress);
-  Serial.print("Uptime: "); Serial.print(millis() / 1000); Serial.println(" sec");
-  Serial.print("Free RAM: "); Serial.println(ESP.getFreeHeap());
-  Serial.print("Wi-Fi:  "); Serial.println(isWiFiConnected() ? "Connesso" : "Disconnesso");
-  if (isWiFiConnected()) {
-    Serial.print("SSID: "); Serial.println(WiFi.SSID());
-    Serial.print("RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
-  }
-  Serial.println();
-}
+  

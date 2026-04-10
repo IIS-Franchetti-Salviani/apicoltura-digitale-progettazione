@@ -73,7 +73,37 @@ static unsigned long _hx711_intervallo = 60000; // 1 minuto default
 static bool _hx711_abilitato = true;
 static bool _hx711_inizializzato = false;
 static bool _hx711_tarato = false;
+static bool _hx711_powered_down = false;       // stato power-down HX711
 static unsigned long _last_read_time = 0;
+
+// Tempo di stabilizzazione dopo powerUp prima che il convertitore
+// produca letture affidabili. A 10 SPS servono tipicamente 4-5 campioni
+// validi (~400-500 ms). Teniamo 500 ms per margine.
+static const unsigned long HX711_WAKEUP_STABILIZE_MS = 500;
+
+// Wrapper power-management per avere sempre una coppia Up/Down consistente.
+static void _hx711_wake() {
+  if (!_hx711_inizializzato) return;
+  if (_hx711_powered_down) {
+    LoadCell.powerUp();
+    _hx711_powered_down = false;
+    // Scarta i primi sample instabili: facciamo girare update() per ~500 ms
+    unsigned long startWake = millis();
+    while (millis() - startWake < HX711_WAKEUP_STABILIZE_MS) {
+      LoadCell.update();
+      esp_task_wdt_reset();
+      delay(5);
+    }
+  }
+}
+
+static void _hx711_sleep() {
+  if (!_hx711_inizializzato) return;
+  if (!_hx711_powered_down) {
+    LoadCell.powerDown();
+    _hx711_powered_down = true;
+  }
+}
 
 // Campionamento adattivo
 static float _hx711_delta = 0.05f;          // kg — soglia variazione per invio anticipato
@@ -160,6 +190,13 @@ void setup_hx711() {
     Serial.print("    Fallback cal factor: ");
     Serial.println(_hx711_calibration_factor);
   }
+
+  // Metti subito l'HX711 in power-down fino alla prima lettura.
+  // Dispositivo a batteria+solare: consumo tipico HX711 ~1.5 mA in run,
+  // ~1 uA in power-down. Lo riaccenderemo on-demand in read_weight_hx711()
+  // e in tare_hx711(). _hx711_wake() si occupera' della stabilizzazione.
+  _hx711_sleep();
+  Serial.println("  + HX711 posto in power-down per risparmio energetico");
   Serial.println();
 }
 
@@ -272,6 +309,10 @@ bool tare_hx711() {
 
   Serial.println("  [TARA] Avvio procedura tara manuale");
 
+  // Riaccendi HX711 se era in power-down (risparmio energetico) e
+  // aspetta la stabilizzazione del convertitore prima di procedere.
+  _hx711_wake();
+
   // --- STEP 1: pre-warming, aspetta che arrivino sample validi ---
   Serial.println("  [TARA] Pre-warming convertitore (max 2s)...");
   esp_task_wdt_reset();
@@ -292,6 +333,7 @@ bool tare_hx711() {
     Serial.println("      - HX711 non cablato (DOUT/SCK/VCC/GND)");
     Serial.println("      - Alimentazione insufficiente (usa 3.3V stabile)");
     Serial.println("      - Cella di carico non collegata al modulo HX711");
+    _hx711_sleep();
     return false;
   }
 
@@ -320,6 +362,7 @@ bool tare_hx711() {
     Serial.println(" ms");
     Serial.println("    La libreria non ha ricevuto abbastanza sample.");
     Serial.println("    Controlla cablaggio HX711 (DOUT/SCK) e alimentazione.");
+    _hx711_sleep();
     return false;
   }
 
@@ -337,6 +380,10 @@ bool tare_hx711() {
   Serial.println(" ms");
   Serial.print("    Nuovo tare_offset (ADC grezzo): ");
   Serial.println(_hx711_tare_offset);
+
+  // Risparmio energetico: rimetti l'HX711 in power-down fino alla
+  // prossima lettura/tara.
+  _hx711_sleep();
   return true;
 }
 
@@ -375,6 +422,12 @@ RisultatoValidazione read_weight_hx711() {
     return risultato;
   }
 
+  // --- DA QUI IN POI L'HX711 DEVE ESSERE ACCESO ---
+  // Risparmio energetico: era in power-down (~1 uA). Lo riaccendiamo per
+  // la lettura e poi lo rimettiamo a dormire prima di ogni return.
+  // _hx711_wake() si occupa della stabilizzazione (~500 ms).
+  _hx711_wake();
+
   // 4. AGGIORNA E LEGGI
   // Aggiorna il convertitore (necessario per HX711_ADC)
   unsigned long startTime = millis();
@@ -391,6 +444,7 @@ RisultatoValidazione read_weight_hx711() {
   if (!newData) {
     risultato.codiceErrore = ERR_SENSOR_TIMEOUT;
     strcpy(risultato.messaggioErrore, "[HX711] Timeout lettura");
+    _hx711_sleep();
     return risultato;
   }
 
@@ -400,6 +454,7 @@ RisultatoValidazione read_weight_hx711() {
   if (isnan(peso_kg) || isinf(peso_kg)) {
     risultato.codiceErrore = ERR_PS_CONVERSION_FAILED;
     strcpy(risultato.messaggioErrore, "[HX711] Lettura non valida");
+    _hx711_sleep();
     return risultato;
   }
 
@@ -417,6 +472,9 @@ RisultatoValidazione read_weight_hx711() {
   }
 
   _last_read_time = millis();
+
+  // Rimetti l'HX711 in power-down fino alla prossima lettura.
+  _hx711_sleep();
   return risultato;
 }
 

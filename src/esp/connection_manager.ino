@@ -13,6 +13,16 @@
 #include <math.h>
 #include "SensorValidation.h"
 
+// ---------------------------------------------------------------------------
+// CPU scaling: helpers implementati in esp.ino. Durante una chiamata HTTPS
+// saliamo a 240 MHz (TLS handshake CPU-bound), poi torniamo a 80 MHz.
+// Usare SEMPRE in coppia: cpu_boost() all'inizio, cpu_normal() in uscita
+// (incluso early-return su errore) per non lasciare la CPU "inchiodata"
+// a 240 MHz ed evitare consumi extra a batteria.
+// ---------------------------------------------------------------------------
+extern void cpu_boost();
+extern void cpu_normal();
+
 // ============================================================================
 // CONFIGURAZIONE SERVER (impostata da init_data_manager)
 // ============================================================================
@@ -170,6 +180,10 @@ ConfigData fetch_sensor_config(const char* macAddress) {
     return response;
   }
 
+  // Boost CPU per handshake TLS e crypto (il core a 80 MHz impiegherebbe
+  // piu' tempo, tenendo la radio accesa piu' a lungo = piu' consumo totale).
+  cpu_boost();
+
   // Client HTTPS sicuro
   WiFiClientSecure client;
   client.setInsecure();  // Disabilita verifica certificato (per testing)
@@ -266,6 +280,7 @@ ConfigData fetch_sensor_config(const char* macAddress) {
   }
 
   http.end();
+  cpu_normal();
   return response;
 }
 
@@ -288,6 +303,8 @@ bool save_sensor_data(SensorData* data) {
     Serial.println("  ! save_sensor_data: sensorId mancante");
     return false;
   }
+
+  cpu_boost();
 
   // Client HTTPS sicuro
   WiFiClientSecure client;
@@ -350,6 +367,7 @@ bool save_sensor_data(SensorData* data) {
   }
 
   http.end();
+  cpu_normal();
   return success;
 }
 
@@ -397,6 +415,10 @@ bool send_sensor_runtime_status(const char* macAddress, const char* tipoSensore,
     return false;
   }
 
+  // Boost CPU a 240 MHz durante la crypto TLS per ridurre il tempo
+  // in cui la radio Wi-Fi resta accesa (consumo medio piu' basso).
+  cpu_boost();
+
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -442,6 +464,7 @@ bool send_sensor_runtime_status(const char* macAddress, const char* tipoSensore,
   bool success = (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED);
   http.end();
 
+  cpu_normal();
   return success;
 }
 
@@ -490,6 +513,9 @@ bool save_hx711_calibration(const char* sensorId, float calFactor, long tareOffs
     return false;
   }
 
+  // Boost CPU durante la PATCH HTTPS per accorciare il tempo radio-on.
+  cpu_boost();
+
   String jsonPayload;
   serializeJson(doc, jsonPayload);
 
@@ -506,6 +532,7 @@ bool save_hx711_calibration(const char* sensorId, float calFactor, long tareOffs
   Serial.println(success ? " OK" : " ERR");
 
   http.end();
+  cpu_normal();
   return success;
 }
 
@@ -524,6 +551,9 @@ bool send_notification(NotificationData* notification) {
     Serial.println("  ! send_notification: manager non inizializzato");
     return false;
   }
+
+  // Boost CPU durante la crypto TLS (riduce il tempo radio-on).
+  cpu_boost();
 
   // Client HTTPS sicuro
   WiFiClientSecure client;
@@ -578,6 +608,7 @@ bool send_notification(NotificationData* notification) {
   }
 
   http.end();
+  cpu_normal();
   return success;
 }
 

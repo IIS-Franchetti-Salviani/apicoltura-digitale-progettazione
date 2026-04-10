@@ -166,7 +166,7 @@ SensorRuntimeSnapshot snapshotHx711 = {false, false, false, false, NAN, 0, 0, "N
 // GESTIONE EPOCH / NTP
 // ========================================================================
 const unsigned long MIN_VALID_UNIX_TS = 1704067200UL; // 2024-01-01T00:00:00Z
-const unsigned long NTP_RESYNC_INTERVAL_MS = 6UL * 60UL * 60UL * 1000UL; // 6h
+const unsigned long NTP_RESYNC_INTERVAL_MS = 60UL * 60UL * 1000UL; // 1h (alimentazione a batteria: meno radio)
 unsigned long lastKnownUnixEpoch = 0;
 unsigned long lastKnownUnixMillis = 0;
 unsigned long lastNtpSyncAttemptMs = 0;
@@ -750,6 +750,39 @@ bool leggiMacAddressDispositivo(char* outMac, size_t outSize) {
 }
 
 // ============================================================================
+// CPU FREQUENCY SCALING - risparmio energetico
+// ============================================================================
+// Su batteria + pannello solare ogni mA conta.
+// Strategia: CPU a 80 MHz in loop normale (minimo richiesto per avere
+// il Wi-Fi attivo), boost a 240 MHz SOLO per la finestra di una chiamata
+// HTTPS (handshake TLS + crypto sono CPU-bound e vogliamo farli il piu'
+// velocemente possibile per poi tornare a dormire).
+//
+// cpu_boost() e cpu_normal() sono "nestable": un counter interno
+// permette chiamate annidate (es. notify() dentro a un'altra POST)
+// senza che una early-return abbassi la CPU mentre un altro HTTPS e'
+// ancora in corso.
+// ============================================================================
+static const uint32_t CPU_FREQ_NORMAL_MHZ = 80;   // minimo per WiFi attivo
+static const uint32_t CPU_FREQ_BOOST_MHZ  = 240;  // max, per TLS/crypto
+static volatile uint8_t _cpuBoostNesting = 0;
+
+void cpu_boost() {
+  if (_cpuBoostNesting == 0) {
+    setCpuFrequencyMhz(CPU_FREQ_BOOST_MHZ);
+  }
+  _cpuBoostNesting++;
+}
+
+void cpu_normal() {
+  if (_cpuBoostNesting == 0) return;  // paranoia: nulla da fare
+  _cpuBoostNesting--;
+  if (_cpuBoostNesting == 0) {
+    setCpuFrequencyMhz(CPU_FREQ_NORMAL_MHZ);
+  }
+}
+
+// ============================================================================
 // GESTIONE WI-FI ROBUSTA (WiFiMulti + eventi + back-off + cold reset)
 // ============================================================================
 // Strategia:
@@ -818,13 +851,17 @@ static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
 void initWiFi() {
   // Configurazione radio PRIMA di qualunque begin():
-  // persistent(false) -> no flash wear
-  // setAutoReconnect -> auto-reconnect interno per la maggior parte dei casi
-  // setSleep(false)  -> modem sempre attivo, riconnessioni piu' rapide
+  // persistent(false)     -> no flash wear
+  // setAutoReconnect      -> auto-reconnect interno per la maggior parte dei casi
+  // setSleep(WIFI_PS_MIN_MODEM) -> modem sleep tra un beacon DTIM e l'altro.
+  //   Fondamentale per l'alimentazione a batteria + pannello solare:
+  //   riduce il consumo radio medio da ~100 mA a ~20 mA.
+  //   Le riconnessioni restano efficaci grazie all'event handler +
+  //   back-off + cold reset implementati sotto.
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
 
   // Registra l'handler eventi UNA volta sola
   WiFi.onEvent(onWiFiEvent);
@@ -861,7 +898,7 @@ static void wifiColdReset() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false);
+  WiFi.setSleep(WIFI_PS_MIN_MODEM);
   delay(200);
   esp_task_wdt_reset();
   Serial.println("  [WiFi] Cold reset completato, nuovo tentativo associazione");
@@ -979,7 +1016,9 @@ void caricaConfigDaServer() {
     Serial.println("  ! Wi-Fi non connesso, uso config default");
   }
 
+  esp_task_wdt_reset();   // reset prima della chiamata HTTPS
   configSensori = fetch_sensor_config(deviceMacAddress);
+  esp_task_wdt_reset();   // reset dopo la chiamata HTTPS (TLS lento a 80 MHz)
 
   if (configSensori.success) {
     Serial.println("  + Config ricevuta dal server");
@@ -991,12 +1030,16 @@ void caricaConfigDaServer() {
   init_humidity_sht21(&configSensori.sht21_humidity);
   init_temperature_sht21(&configSensori.sht21_temperature);
   init_hx711(&configSensori.hx711);
+  esp_task_wdt_reset();   // reset dopo le init (NVS write puo' bloccare)
 
   calibrate_hx711(configSensori.calibrationFactor, configSensori.calibrationOffset);
 
   configCaricata = true;
 
   // Report stato sensori ad ogni download/applicazione configurazione.
+  // Ogni inviaStatoSensoreRuntime() fa un POST HTTPS: resettiamo il WDT
+  // fra una chiamata e l'altra per evitare accumulo.
+  esp_task_wdt_reset();
   if (!configSensori.ds18b20.abilitato) {
     inviaStatoSensoreRuntime("ds18b20", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
   } else if (!isValidSeaId(configSensori.ds18b20.sensorId)) {
@@ -1005,6 +1048,7 @@ void caricaConfigDaServer() {
     inviaStatoSensoreRuntime("ds18b20", "CONFIG_SYNC", "", "", 9000, NAN);
   }
 
+  esp_task_wdt_reset();
   if (!configSensori.sht21_humidity.abilitato) {
     inviaStatoSensoreRuntime("sht21_humidity", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
   } else if (!isValidSeaId(configSensori.sht21_humidity.sensorId)) {
@@ -1013,6 +1057,7 @@ void caricaConfigDaServer() {
     inviaStatoSensoreRuntime("sht21_humidity", "CONFIG_SYNC", "", "", 9000, NAN);
   }
 
+  esp_task_wdt_reset();
   if (!configSensori.sht21_temperature.abilitato) {
     inviaStatoSensoreRuntime("sht21_temperature", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
   } else if (!isValidSeaId(configSensori.sht21_temperature.sensorId)) {
@@ -1021,6 +1066,7 @@ void caricaConfigDaServer() {
     inviaStatoSensoreRuntime("sht21_temperature", "CONFIG_SYNC", "", "", 9000, NAN);
   }
 
+  esp_task_wdt_reset();
   if (!configSensori.hx711.abilitato) {
     inviaStatoSensoreRuntime("hx711", "CONFIG_SYNC", "SENSORE_DISABILITATO_CONFIG", "sea_stato=false", 9000, NAN);
   } else if (!isValidSeaId(configSensori.hx711.sensorId)) {
@@ -1116,16 +1162,42 @@ void setup() {
   Serial.println("========================================");
   Serial.println();
 
-  // Inizializza watchdog - CORRETTO per ESP32 IDF v5. 5
+  // Inizializza watchdog - CORRETTO per ESP32 IDF v5.x
+  // Il TWDT potrebbe gia' essere stato inizializzato dal framework Arduino
+  // (CONFIG_ESP_TASK_WDT_INIT in sdkconfig, timeout default ~5s).
+  // In quel caso esp_task_wdt_init() ritorna ESP_ERR_INVALID_STATE e il
+  // nostro timeout (30s) non viene mai applicato — il WDT scatta dopo 5s!
+  // Fix: tentare init, se gia' attivo usare reconfigure per impostare il
+  // nostro timeout.
   Serial.println("Inizializzazione Watchdog Timer...");
   esp_task_wdt_config_t wdt_config = {
     .timeout_ms = WDT_TIMEOUT_SEC * 1000,
     .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
     .trigger_panic = true
   };
-  esp_task_wdt_init(&wdt_config);
+  esp_err_t wdt_err = esp_task_wdt_init(&wdt_config);
+  if (wdt_err == ESP_ERR_INVALID_STATE) {
+    // TWDT gia' attivo dal framework: riconfiguriamo il timeout a 30s
+    wdt_err = esp_task_wdt_reconfigure(&wdt_config);
+    Serial.print("  TWDT gia' attivo, reconfigure: ");
+    Serial.println(wdt_err == ESP_OK ? "OK" : "ERR");
+  }
   esp_task_wdt_add(NULL);
-  Serial.println("  + Watchdog attivo\n");
+  Serial.print("  + Watchdog attivo (timeout ");
+  Serial.print(WDT_TIMEOUT_SEC);
+  Serial.println("s)\n");
+
+  // Risparmio energetico: CPU a 80 MHz (minimo richiesto per il Wi-Fi).
+  // Boost automatico a 240 MHz solo durante le chiamate HTTPS (vedi
+  // cpu_boost/cpu_normal in connection_manager.ino).
+  // Spegni il Bluetooth: non lo usiamo ed il core ESP32 lo lascia
+  // parzialmente inizializzato per default.
+  setCpuFrequencyMhz(CPU_FREQ_NORMAL_MHZ);
+  Serial.print("  + CPU frequency: ");
+  Serial.print(getCpuFrequencyMhz());
+  Serial.println(" MHz");
+  btStop();
+  Serial.println("  + Bluetooth disabilitato (btStop)\n");
 
   // FASE 1: Inizializzazione Wi-Fi
   Serial.println("FASE 1: INIZIALIZZAZIONE WI-FI\n");
@@ -1356,4 +1428,38 @@ void loop() {
         gestisciRisultatoSensore(risultato);
         if (inviaDatoSensore("hx711", &risultato)) {
           mark_sent_hx711(risultato.valorePulito);
-  
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_hx711, get_intervallo_hx711())) {
+      Serial.println("\n[HX711] LETTURA PESO NON VALIDA");
+      gestisciRisultatoSensore(risultato);
+      inviaStatoSensoreRuntime(
+        "hx711",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
+      aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
+    }
+  }
+}
+
+// ============================================================================
+// UTILITY
+// ============================================================================
+void stampaStatistiche() {
+  Serial.println("\n--- STATISTICHE ---");
+  Serial.print("MAC:  "); Serial.println(deviceMacAddress);
+  Serial.print("Uptime: "); Serial.print(millis() / 1000); Serial.println(" sec");
+  Serial.print("Free RAM: "); Serial.println(ESP.getFreeHeap());
+  Serial.print("Wi-Fi:  "); Serial.println(isWiFiConnected() ? "Connesso" : "Disconnesso");
+  if (isWiFiConnected()) {
+    Serial.print("SSID: "); Serial.println(WiFi.SSID());
+    Serial.print("RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
+  }
+  Serial.println();
+}

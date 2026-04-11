@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apicoltura Digitale | Tecnologia, natura e apprendimento vero</title>
+  <meta name="description" content="Pagina di presentazione del progetto didattico Apicoltura Digitale dell'IIS Franchetti Salviani: fasi del progetto, architettura tecnica, video e link alla web app." />
+  <style>
+    :root {
+      --bg: #fffdf7;
+      --surface: #ffffff;
+      --surface-2: #fff7e8;
+      --text: #2e2a24;
+      --muted: #6d655b;
+      --primary: #e1a325;
+      --primary-dark: #9a6a06;
+      --accent: #3e7c3f;
+      --border: #eadfca;
+      --shadow: 0 10px 30px rgba(66, 48, 17, 0.08);
+      --radius: 20px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(225,163,37,0.12), transparent 26%),
+        radial-gradient(circle at top left, rgba(62,124,63,0.08), transparent 24%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--primary-dark);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    .container {
+      width: min(var(--max), calc(100% - 2rem));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(10px);
+      background: rgba(255, 253, 247, 0.9);
+      border-bottom: 1px solid rgba(234, 223, 202, 0.9);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .brand-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #ffd15c, #f0a714);
+      box-shadow: var(--shadow);
+      font-size: 1.3rem;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: flex-end;
+    }
+
+    .nav a {
+      font-size: 0.95rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .hero {
+      padding: 4.5rem 0 2.5rem;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(62,124,63,0.1);
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+
+    h1, h2, h3 { line-height: 1.15; margin-top: 0; }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 4.2rem);
+      margin-bottom: 1rem;
+    }
+
+    .hero p {
+      font-size: 1.08rem;
+      color: var(--muted);
+      max-width: 62ch;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+      margin-top: 1.5rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      padding: 0.95rem 1.2rem;
+      border-radius: 14px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #f3bb44, #e19f14);
+      color: #332200;
+      box-shadow: var(--shadow);
+    }
+
+    .btn-secondary {
+      border-color: var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .hero-card, .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card {
+      padding: 1.4rem;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .stat {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 1rem;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.5rem;
+      color: var(--primary-dark);
+      margin-bottom: 0.2rem;
+    }
+
+    section {
+      padding: 1.5rem 0 2.5rem;
+    }
+
+    .section-head {
+      margin-bottom: 1.2rem;
+      max-width: 75ch;
+    }
+
+    .section-head p {
+      color: var(--muted);
+      margin-bottom: 0;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+
+    .card {
+      padding: 1.3rem;
+      height: 100%;
+    }
+
+    .card h3 {
+      margin-bottom: 0.7rem;
+      font-size: 1.2rem;
+    }
+
+    .card p, .card li {
+      color: var(--muted);
+    }
+
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      padding: 0;
+      margin: 1rem 0 0;
+      list-style: none;
+    }
+
+    .pill-list li {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.85rem;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 1rem;
+      position: relative;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 74px 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .timeline-step {
+      position: sticky;
+      top: 90px;
+      width: 74px;
+      height: 74px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #ffe39b, #f2b539);
+      color: #5b3a00;
+      font-size: 1.35rem;
+      font-weight: 800;
+      border: 1px solid rgba(154,106,6,0.18);
+    }
+
+    .timeline-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 1.2rem 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    .timeline-content h3 {
+      margin-bottom: 0.6rem;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .arch-box {
+      background: linear-gradient(180deg, #fffef9, #fff5df);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 1rem;
+      box-shadow: var(--shadow);
+    }
+
+    .arch-box small {
+      display: inline-block;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 0.45rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .quote {
+      padding: 1.4rem;
+      border-left: 5px solid var(--primary);
+      background: #fff8e8;
+      border-radius: 0 18px 18px 0;
+      color: var(--text);
+    }
+
+    .video-wrap {
+      aspect-ratio: 16 / 9;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      background: #000;
+    }
+
+    .video-wrap iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .cta {
+      background: linear-gradient(135deg, rgba(225,163,37,0.14), rgba(62,124,63,0.12));
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 1.4rem;
+      box-shadow: var(--shadow);
+    }
+
+    .key-box {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      background: rgba(255,255,255,0.8);
+      border: 1px dashed #cda55b;
+      border-radius: 18px;
+      padding: 0.9rem 1rem;
+      margin: 1rem 0;
+    }
+
+    code {
+      background: #fff4d3;
+      padding: 0.2rem 0.45rem;
+      border-radius: 8px;
+      font-family: Consolas, monospace;
+      font-size: 0.95rem;
+      color: #6b4400;
+      word-break: break-all;
+    }
+
+    footer {
+      padding: 2rem 0 3rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .footer-box {
+      border-top: 1px solid var(--border);
+      padding-top: 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: space-between;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .grid-2,
+      .grid-3,
+      .architecture {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-item {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-step {
+        position: static;
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .nav { display: none; }
+      .hero { padding-top: 2.8rem; }
+      .stats { grid-template-columns: 1fr; }
+      h1 { font-size: 2.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="brand-badge">🐝</div>
+        <div>
+          <div>Apicoltura Digitale</div>
+          <small style="color: var(--muted); font-weight: 600;">IIS Franchetti Salviani</small>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#progetto">Progetto</a>
+        <a href="#fasi">Fasi</a>
+        <a href="#tecnica">Parte tecnica</a>
+        <a href="#video">Video</a>
+        <a href="#webapp">Web app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow">Didattica innovativa • PCTO • IoT • Territorio</div>
+          <h1>Tecnologia, natura e apprendimento vero</h1>
+          <p>
+            <strong>Apicoltura Digitale</strong> è un project work realizzato dalle classi <strong>5C e 5D Informatica</strong>
+            dell'IIS Franchetti Salviani di Città di Castello. Il progetto ha trasformato un'esigenza concreta del territorio
+            in un percorso didattico autentico: progettare un sistema capace di monitorare un'arnia e rendere i dati consultabili da remoto.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#webapp">Apri la web app</a>
+            <a class="btn btn-secondary" href="https://github.com/IIS-Franchetti-Salviani/apicoltura-digitale-progettazione/" target="_blank" rel="noopener noreferrer">Vai al repository</a>
+            <a class="btn btn-secondary" href="#video">Guarda il video</a>
+          </div>
+          <ul class="pill-list">
+            <li>12–24 gennaio 2026</li>
+            <li>Oltre 30 studenti</li>
+            <li>Approccio PBL + Jigsaw</li>
+            <li>ESP32, API, DB, Web App</li>
+          </ul>
+        </div>
+        <aside class="hero-card">
+          <h3>In breve</h3>
+          <p>
+            Un percorso didattico che ha simulato un contesto professionale reale: ruoli, tempi, obiettivi, interdipendenza tra team,
+            confronto con esperti, cliente reale e installazione finale su un'arnia vera.
+          </p>
+          <div class="stats">
+            <div class="stat">
+              <strong>4</strong>
+              Aree di lavoro integrate
+            </div>
+            <div class="stat">
+              <strong>1</strong>
+              Ecosistema digitale completo
+            </div>
+            <div class="stat">
+              <strong>2</strong>
+              Settimane intensive di sviluppo
+            </div>
+            <div class="stat">
+              <strong>100%</strong>
+              Apprendimento sul campo
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="progetto">
+      <div class="container">
+        <div class="section-head">
+          <h2>Un progetto didattico nato da un problema vero</h2>
+          <p>
+            L'obiettivo non era realizzare un semplice esercizio scolastico, ma costruire una risposta concreta alle esigenze di un apicoltore:
+            raccogliere dati utili dallo stato dell'arnia, inviarli a un sistema centrale e renderli leggibili tramite una web app.
+          </p>
+        </div>
+        <div class="grid-2">
+          <article class="card">
+            <h3>Perché è un progetto speciale</h3>
+            <p>
+              Gli studenti hanno lavorato su una sfida reale del territorio, con ruoli assegnati, scadenze, responsabilità individuali e obiettivi condivisi.
+              La tecnologia è stata usata come strumento per valorizzare un mestiere tradizionale e sensibilizzare sui temi ambientali.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Cosa hanno imparato</h3>
+            <p>
+              Non solo sviluppo software e progettazione tecnica, ma anche collaborazione, organizzazione del lavoro, problem solving,
+              comunicazione tra gruppi, autonomia e capacità di integrare componenti diverse in un unico sistema coerente.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="fasi">
+      <div class="container">
+        <div class="section-head">
+          <h2>Le fasi del progetto</h2>
+          <p>
+            Il percorso si è sviluppato come un vero project work, dalla raccolta dei requisiti fino all'installazione su un'arnia reale.
+          </p>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-step">1</div>
+            <div class="timeline-content">
+              <h3>Analisi del problema e raccolta dei requisiti</h3>
+              <p>
+                Il progetto è partito dal confronto con il territorio e con il cliente reale. Gli studenti hanno ascoltato le esigenze dell'apicoltore,
+                osservato il contesto d'uso e definito quali dati fosse davvero utile monitorare: temperatura, umidità, peso dell'arnia e altri eventi significativi.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-step">2</div>
+            <div class="timeline-content">
+              <h3>Organizzazione in team e divisione dei ruoli</h3>
+              <p>
+                Le classi sono state suddivise in gruppi di lavoro con responsabilità precise e project manager studenti. Ogni gruppo ha sviluppato una parte del sistema,
+                ma il risultato dipendeva dalla capacità di integrare il proprio lavoro con quello degli altri.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-step">3</div>
+            <div class="timeline-content">
+              <h3>Progettazione tecnica e sviluppo</h3>
+              <p>
+                In parallelo sono stati affrontati progettazione hardware, logica firmware, modello dati, API e struttura della connettività.
+                Questa fase ha richiesto continui allineamenti, prove, correzioni e verifiche incrociate.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-step">4</div>
+            <div class="timeline-content">
+              <h3>Confronto con esperti ed ex studenti</h3>
+              <p>
+                Il percorso è stato arricchito dal contributo di apicoltori, software architect, esperti di Intelligenza Artificiale ed ex alunni dell'istituto.
+                Questo ha dato al progetto una forte impronta professionale e orientativa.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-step">5</div>
+            <div class="timeline-content">
+              <h3>Installazione, test e presentazione finale</h3>
+              <p>
+                La fase conclusiva ha portato il lavoro fuori dal laboratorio: il sistema è stato installato su un'arnia reale, testato sul campo e poi raccontato pubblicamente
+                attraverso materiali, presentazioni e dimostrazioni.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="grid-2">
+          <article class="card">
+            <h3>Metodologia didattica</h3>
+            <p>
+              Il progetto ha unito <strong>Project Based Learning</strong>, <strong>Problem Based Learning</strong> e approccio <strong>jigsaw</strong>.
+              In pratica: una sfida autentica, un prodotto finale concreto e un lavoro cooperativo in cui ogni gruppo possiede un pezzo fondamentale del puzzle.
+            </p>
+          </article>
+          <article class="quote">
+            La parte più importante non è stata soltanto costruire un dispositivo o scrivere codice, ma imparare che una soluzione tecnica funziona davvero
+            solo quando tiene insieme persone, tempi, bisogni reali, affidabilità e capacità di collaborazione.
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="tecnica">
+      <div class="container">
+        <div class="section-head">
+          <h2>La parte tecnica del sistema</h2>
+          <p>
+            Il progetto ha portato alla realizzazione di un ecosistema digitale completo, composto da dispositivo IoT, infrastruttura dati,
+            comunicazione di rete e applicazione web per il monitoraggio remoto.
+          </p>
+        </div>
+        <div class="architecture">
+          <div class="arch-box">
+            <small>01 • Device IoT</small>
+            <h3>ESP32 e sensori</h3>
+            <p>
+              Il nodo di campo acquisisce misure dall'arnia tramite sensori e microcontrollore, trasformando il comportamento dell'ambiente in dati digitali.
+            </p>
+          </div>
+          <div class="arch-box">
+            <small>02 • Comunicazione</small>
+            <h3>API e scambio dati</h3>
+            <p>
+              Le misure vengono inviate a un sistema centrale attraverso chiamate strutturate, con logica di integrazione tra firmware e backend.
+            </p>
+          </div>
+          <div class="arch-box">
+            <small>03 • Persistenza</small>
+            <h3>Database e storico</h3>
+            <p>
+              Il backend archivia i dati nel database, gestisce storico, parametri e organizzazione delle informazioni per il monitoraggio nel tempo.
+            </p>
+          </div>
+          <div class="arch-box">
+            <small>04 • Front-end</small>
+            <h3>Web app mobile</h3>
+            <p>
+              L'interfaccia finale consente di consultare i dati da smartphone o PC, avvicinando il progetto a una vera soluzione professionale.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 1.25rem;">
+          <article class="card">
+            <h3>I quattro gruppi tecnici</h3>
+            <ul>
+              <li><strong>Hardware:</strong> sensori, microcontrollore, montaggio e vincoli fisici.</li>
+              <li><strong>Software/Firmware:</strong> logica di acquisizione e comportamento del dispositivo.</li>
+              <li><strong>Database:</strong> progettazione delle strutture dati e gestione dello storico.</li>
+              <li><strong>Connettività:</strong> integrazione di rete e dialogo tra i componenti del sistema.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Le difficoltà affrontate</h3>
+            <ul>
+              <li>Calibrazione delle misure e lettura affidabile dei sensori.</li>
+              <li>Integrazione tra hardware, software, rete e database.</li>
+              <li>Coordinamento tra gruppi che lavoravano su componenti interdipendenti.</li>
+              <li>Scelte progettuali da adattare man mano che emergevano vincoli reali.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="video">
+      <div class="container">
+        <div class="section-head">
+          <h2>Video di presentazione</h2>
+          <p>
+            Un racconto sintetico del progetto, utile per vedere in azione il lavoro svolto e il valore didattico dell'esperienza.
+          </p>
+        </div>
+        <div class="video-wrap">
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/8BPvzTr1_HE"
+            title="Video di presentazione del progetto Apicoltura Digitale"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen>
+          </iframe>
+        </div>
+      </div>
+    </section>
+
+    <section id="webapp">
+      <div class="container">
+        <div class="cta">
+          <div class="section-head" style="margin-bottom: 0.5rem;">
+            <h2>Prova la web app del progetto</h2>
+            <p>
+              La parte conclusiva del lavoro è visibile anche online: qui è possibile aprire l'applicazione sviluppata per la consultazione dei dati.
+            </p>
+          </div>
+
+          <div class="key-box">
+            <div>
+              <strong>Chiave di accesso</strong><br />
+              <code id="project-key">697c5d4953d66e48e51956eb</code>
+            </div>
+            <button class="btn btn-secondary" type="button" id="copyKeyBtn">Copia la chiave</button>
+          </div>
+
+          <div class="hero-actions" style="margin-top: 0.5rem;">
+            <a class="btn btn-primary" href="https://bee-life.vercel.app/" target="_blank" rel="noopener noreferrer">Apri Bee Life</a>
+            <a class="btn btn-secondary" href="https://github.com/IIS-Franchetti-Salviani/apicoltura-digitale-progettazione/" target="_blank" rel="noopener noreferrer">Documentazione del progetto</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-box">
+      <div>
+        <strong>Apicoltura Digitale</strong><br />
+        IIS Franchetti Salviani • Città di Castello
+      </div>
+      <div>
+        Progetto didattico di informatica, sistemi, rete, sviluppo web e integrazione IoT.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const copyKeyBtn = document.getElementById('copyKeyBtn');
+    const keyElement = document.getElementById('project-key');
+
+    copyKeyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(keyElement.textContent.trim());
+        copyKeyBtn.textContent = 'Chiave copiata';
+        setTimeout(() => {
+          copyKeyBtn.textContent = 'Copia la chiave';
+        }, 1800);
+      } catch (error) {
+        copyKeyBtn.textContent = 'Copia manuale';
+      }
+    });
+  </script>
+</body>
+</html>

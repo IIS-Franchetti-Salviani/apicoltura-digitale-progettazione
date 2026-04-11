@@ -1356,4 +1356,39 @@ void loop() {
         gestisciRisultatoSensore(risultato);
         if (inviaDatoSensore("hx711", &risultato)) {
           mark_sent_hx711(risultato.valorePulito);
+        }
+        Serial.println("---\n");
+      }
+    } else if (intervalloTrascorso(ultimoCheck_hx711, get_intervallo_hx711())) {
+      Serial.println("\n[HX711] LETTURA PESO NON VALIDA");
+      gestisciRisultatoSensore(risultato);
+      inviaStatoSensoreRuntime(
+        "hx711",
+        "LETTURA_NON_VALIDA",
+        "VALIDAZIONE_FALLITA",
+        risultato.messaggioErrore,
+        risultato.codiceErrore,
+        risultato.valorePulito
+      );
+      aggiornaSnapshotSensore("hx711", &risultato, false, "Lettura non valida");
+      Serial.println("---\n");
+    }
+  }
+}
+
+// ============================================================================
+// UTILITY
+// ============================================================================
+void stampaStatistiche() {
+  Serial.println("\n--- STATISTICHE ---");
+  Serial.print("MAC:  "); Serial.println(deviceMacAddress);
+  Serial.print("Uptime: "); Serial.print(millis() / 1000); Serial.println(" sec");
+  Serial.print("Free RAM: "); Serial.println(ESP.getFreeHeap());
+  Serial.print("Wi-Fi:  "); Serial.println(isWiFiConnected() ? "Connesso" : "Disconnesso");
+  if (isWiFiConnected()) {
+    Serial.print("SSID: "); Serial.println(WiFi.SSID());
+    Serial.print("RSSI: "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
+  }
+  Serial.println();
+}
   
